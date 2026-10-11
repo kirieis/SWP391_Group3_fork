@@ -133,8 +133,8 @@ export const astClient = {
         options?: { whitelist?: string[]; with_fragments?: boolean }
     ): Promise<ASTCompareResult | undefined> => {
         return engineFetch<ASTCompareResult>("/compare", {
-            submission_a: a,
-            submission_b: b,
+            submission_1: a,
+            submission_2: b,
             whitelist: options?.whitelist ?? [],
             with_fragments: options?.with_fragments ?? true,
         });

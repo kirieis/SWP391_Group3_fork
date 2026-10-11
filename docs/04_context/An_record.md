@@ -17,6 +17,8 @@
 7. [Chi tiết Giai đoạn 6: Thống nhất Giao thức kết nối liên phân hệ (Phân hệ 2, 4, 5) & WebSocket Real-time](#7-chi-tiết-giai-đoạn-6-thống-nhất-giao-thức-kết-nối-liên-phân-hệ-phân-hệ-2-4-5--websocket-real-time)
 8. [Chi tiết Giai đoạn 7: Tích hợp Giao diện Frontend React (Vite) & Quản lý Trạng thái](#8-chi-tiết-giai-đoạn-7-tích-hợp-giao-diện-frontend-react-vite--quản-lý-trạng-thái)
 9. [Chi tiết Giai đoạn 8: Tích hợp ADR-001 — AST Engine Stateless & Vá Rủi ro Bảo mật](#9-chi-tiết-giai-đoạn-8-tích-hợp-adr-001--ast-engine-stateless--vá-rủi-ro-bảo-mật)
+10. [Chi tiết Giai đoạn 10: Chuẩn hóa & Khớp nối Toàn diện Phân hệ 4 (AST Engine Integration)](#10-chi-tiết-giai-đoạn-10-chuẩn-hóa--khớp-nối-toàn-diện-phân-hệ-4-ast-engine-integration)
+11. [Chi tiết Giai đoạn 11: Vá Lỗi Luồng E2E & Tách Module ast.service.ts Độc Lập](#11-chi-tiết-giai-đoạn-11-vá-lỗi-luồng-e2e--tách-module-astservicets-độc-lập)
 
 ---
 
@@ -65,10 +67,11 @@ DATABASE_URL="sqlserver://localhost:1433;database=aita_db;user=sa;password=12345
 JWT_SECRET="aita_jwt_super_secret_key_change_in_production_2026"
 GOOGLE_CLIENT_ID="your_google_client_id.apps.googleusercontent.com"
 INTERNAL_API_KEY="aita_internal_secret_key_2026"
+```
 
 ---
 
-## 9. CHI TIẾT GIAI ĐOẠN 8: TÍCH HỢP ADR-001 — AST ENGINE STATELESS & VÁ RỦI RO BẢO MẬT
+## 8. CHI TIẾT GIAI ĐOẠN 8: TÍCH HỢP ADR-001 — AST ENGINE STATELESS & VÁ RỦI RO BẢO MẬT
 
 - **Ngày thực hiện:** 2026-10-05
 - **Nguồn gốc:** Review `docs/05_plan/ADR-001-engine-stateless.md` do thành viên phụ trách RBL (Phân hệ 4) đề xuất. Dev 1 (An) đánh giá rủi ro và hiện thực hóa phần gateway.
@@ -231,3 +234,31 @@ Kiểm tra IDOR bổ sung: STUDENT chỉ được xem bài của chính mình (s
 - [x] Xử lý khi sinh viên nộp lại bài: dùng `upsert` trên constraint `@@unique([submission1Id, submission2Id])`.
 - [x] Khai báo service `ast-engine` cổng `8000` vào `docker-compose.yml`.
 - [x] Chặn IDOR: Ẩn thông tin bài làm trùng lặp khi người truy vấn có quyền `STUDENT`.
+
+---
+
+## 11. CHI TIẾT GIAI ĐOẠN 11: VÁ LỖI LUỒNG E2E & TÁCH MODULE AST.SERVICE.TS ĐỘC LẬP
+
+- **Ngày cập nhật:** 2026-10-11
+- **Tài liệu căn cứ:** `AN_LOI_PHAT_HIEN_E2E.md` do Nhật (Phân hệ 4) rà soát mã nguồn Gateway.
+
+### 11.1. Các lỗi E2E được chỉ ra và giải pháp kỹ thuật đã triển khai
+
+| # | Mức độ | Vấn đề phát hiện | Giải pháp kỹ thuật đã thực hiện (An) |
+|:---:|:---:|:---|:---|
+| **1** | **Chặn luồng (Blocker)** | File bài nộp là `.zip` nhị phân nhưng `ast.service.ts` đọc text thô `utf-8` → Engine nhận rác nhị phân, rơi về `lex`, không bao giờ bắt được đạo văn. | Cài đặt `adm-zip` và `@types/adm-zip`. Viết hàm `extractJavaSourceFromZip()`: giải nén an toàn trong bộ nhớ, lọc file `.java`, loại bỏ `package`/`import` khi ghép file để tránh lỗi cú pháp ANTLR giả, chống zip-bomb (giới hạn 5MB uncompressed) và chống path traversal (`..`), giới hạn ≤ 100.000 ký tự cho Engine. |
+| **2** | **Nghiêm trọng (Critical)** | So sánh bài nộp cũ không loại trừ bài của chính sinh viên đó (`studentId`) → Khi nộp lại bài bị so khớp 100% với lần nộp trước của mình, dính cờ `DANGER` oan. | Bổ sung điều kiện `studentId: { not: submission.studentId }` vào câu truy vấn `findMany`. Đồng thời lọc Map theo `studentId` chỉ lấy bài nộp mới nhất của từng sinh viên khác, tránh phình dữ liệu bảng `plagiarism_matches`. |
+| **3** | **Cân nhắc (Improvement)** | Khi phát hiện `DANGER`, hệ thống tự ý gán `newScore = 0` vào `ScoreAuditLog` trước khi Giảng viên thẩm định. | Điều chỉnh: Đặt trạng thái `SCORE_WITHHELD` (tạm giữ điểm) và ghi log kiểm toán nêu rõ lý do giữ điểm, giữ nguyên điểm số hiện có chờ Giảng viên xác nhận (không tự động ép về 0). |
+| **4** | **Nhỏ (API Payload)** | `astClient.compare()` gửi `submission_a`/`submission_b` lệch hợp đồng FastAPI (§2.2). | Đổi thành `submission_1` và `submission_2` trong payload của `engineFetch("/compare")`. |
+| **5** | **Kiến trúc (Routing)** | Endpoint nội bộ cho Worker cần thống nhất vị trí. | Mở song song endpoint chuẩn ADR-001: `POST /api/internal/submissions/:id/ast-check` và `POST /api/submissions/internal/:id/ast-check`, bảo vệ qua middleware `requireInternalApiKey` với header `x-internal-key`. |
+
+### 11.2. Tổng kết các module & file đã cập nhật
+
+| File | Hành động | Nội dung thay đổi |
+|:---|:---:|:---|
+| `apps/api/package.json` | 📦 Cập nhật | Cài đặt thư viện `adm-zip` và `@types/adm-zip` |
+| `apps/api/src/services/ast.service.ts` | ✏️ Sửa | Tích hợp giải nén zip, lọc sinh viên khác, xử lý audit log DANGER |
+| `apps/api/src/services/ast.client.ts` | ✏️ Sửa | Khớp field `submission_1`/`submission_2` cho route `/compare` |
+| `apps/api/src/routes/submission.routes.ts` | ✏️ Sửa | Bổ sung endpoint nội bộ `/internal/:submissionId/ast-check` có bảo vệ key |
+| `apps/api/src/index.ts` | ✏️ Sửa | Mount alias `/api/internal/submissions` hỗ trợ chuẩn REST ADR-001 |
+| `apps/api/prisma/schema.prisma` | ✏️ Sửa | Thêm `level`, `mode` (`PlagiarismMatch`) & `analysis_mode`, `fallback_reason`, `warnings` (`ASTFingerprint`) |

@@ -73,6 +73,7 @@ router.get("/appeals/pending", authenticateJWT, authorizeRole("LECTURER", "ADMIN
 router.patch("/:submissionId/result", requireInternalApiKey, updateSubmissionGradingResult);
 
 // Endpoint nội bộ dành riêng cho Worker BullMQ (Phân hệ 5) gọi kích hoạt kiểm tra AST (Mục B4)
+// Hỗ trợ cả 2 chuẩn đường dẫn để đảm bảo tương thích 100% với Phân hệ 5 và ADR-001
 router.post("/internal/:submissionId/ast-check", requireInternalApiKey, async (req, res) => {
     const { submissionId } = req.params;
     const result = await astService.check(submissionId);

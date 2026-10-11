@@ -27,6 +27,9 @@ app.use("/api/assignments", assignmentRoutes);
 app.use("/api/submissions", submissionRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
+// Hỗ trợ alias chuẩn ADR-001: POST /api/internal/submissions/:id/ast-check
+app.use("/api/internal/submissions", submissionRoutes);
+
 // Endpoint kiểm tra sức khỏe hệ thống (Health Check)
 app.get("/health", (req: Request, res: Response) => {
   res.json({
