@@ -701,3 +701,90 @@ User click nut ? useGoogleLogin() mo Google Account Picker popup
 - Validate domain `@fpt.edu.vn` / `@fe.edu.vn` nhu cu
 
 ---
+
+
+---
+
+## Giai Đoạn 19: Khắc Phục Lỗi Sau E2E Test Thật (Theo Yêu Cầu docs/request/CanSua.md Từ Nhật)
+
+### 19.1. Bối Cảnh & Đánh Giá Yêu Cầu
+- **Người gửi yêu cầu:** Nhật (Phân hệ 4 - Engine AST).
+- **Phương thức kiểm thử:** Chạy script E2E `thu_nop_bai_e2e.ps1` với gateway (port 5000) và AST Engine (port 8000), tạo 2 sinh viên nộp 2 file code Java giống nhau 100%.
+- **Kết quả đánh giá yêu cầu từ CanSua.md:** 
+  - Hoàn toàn chính xác và hợp lý về mặt thiết kế database và tính toàn vẹn dữ liệu.
+  - Lỗi vi phạm FK `score_audit_logs_editor_id_fkey` là lỗi nghiêm trọng gây rollback transaction.
+  - Quyết định khắc phục theo **Cách A (đề xuất)** vì phù hợp nhất với mô hình kiểm toán: hành động do hệ thống tự động chạy sẽ có `editorId = null` thay vì cố tạo user rác.
+
+---
+
+### 19.2. Chi Tiết Các Lỗi & Giải Pháp Khắc Phục
+
+#### Lỗi 1 (Chặn): Bài DANGER bị FAILED do FK Constraint `score_audit_logs_editor_id_fkey`
+- **Triệu chứng:** Bài nộp số 2 có `similarityPercent = 100%` (DANGER) nhưng sau khi chạy có `astCheckStatus = FAILED` và `status = PENDING` thay vì `DONE` và `SCORE_WITHHELD`.
+- **Nguyên nhân gốc:** `ast.service.ts` ghi `ScoreAuditLog` với `editorId: "system"`. Chuỗi `"system"` không phải UUID hợp lệ trong bảng `users`. SQL Server ném lỗi FK constraint violation, transaction rollback, khiến catch block gán `FAILED`.
+- **Giải pháp:**
+  1. Cập nhật `apps/api/prisma/schema.prisma`: Đổi `editorId String` -> `editorId String?` và `editor User` -> `editor User?` trong model `ScoreAuditLog`.
+  2. Đồng bộ CSDL và Prisma Client: Chạy `npx prisma db push` và `npx prisma generate`.
+  3. Trong `ast.service.ts`: Truyền `editorId: null` khi ghi log kiểm toán tự động của AST Engine.
+
+#### Lỗi 2: Ghi PlagiarismMatch và đổi trạng thái không cùng Transaction
+- **Triệu chứng:** Cặp match DANGER đã nằm trong bảng `plagiarism_matches` nhưng bài nộp lại bị `FAILED`, dẫn đến dữ liệu mâu thuẫn.
+- **Giải pháp:** Gom toàn bộ thao tác ghi kết quả vào một `prisma.$transaction` duy nhất:
+  - Upsert `plagiarismMatch`
+  - Update `submission.status = "SCORE_WITHHELD"` (nếu DANGER)
+  - Create `scoreAuditLog` (nếu DANGER)
+  Toàn bộ các bước này hoặc cùng thành công, hoặc cùng rollback an toàn.
+
+#### Lỗi 3: Tinh Idempotent khi gọi lại hàm `check(submissionId)`
+- **Triệu chứng:** Gọi lại `check()` lần thứ 2 có nguy cơ nhân đôi dòng nhật ký trong `score_audit_logs`.
+- **Giải pháp:** Bổ sung guard kiểm tra trước khi insert:
+  ```typescript
+  const existingAuditLog = await tx.scoreAuditLog.findFirst({
+      where: {
+          submissionId,
+          reason: { contains: "Nghi ngờ đạo văn" },
+      },
+  });
+  if (!existingAuditLog) {
+      await tx.scoreAuditLog.create({ ... });
+  }
+  ```
+
+#### Lưu ý bổ sung: Bài nộp quá lớn (> 100.000 ký tự)
+- Trước đây: Tự động dùng `.slice(0, MAX_SOURCE_CHARS_FOR_ENGINE)` cắt xén code ngầm, dẫn đến kết quả so sánh bị sai lệch mà không ai biết.
+- Đã sửa: Trả về lỗi rõ ràng để hệ thống đánh dấu bài là `FAILED` kèm lý do quá giới hạn ký tự cho phép.
+
+---
+
+### 19.3. Bảng Đối Chiếu Trước và Sau Khi Sửa
+
+| Hạng mục | Trước khi sửa (Giai đoạn 18) | Sau khi sửa (Giai đoạn 19) |
+|:---------|:-----------------------------|:---------------------------|
+| **ScoreAuditLog.editorId (Schema)** | `String` (bắt buộc trỏ tới User thật) | `String?` (nullable, cho phép log tự động từ hệ thống) |
+| **editorId trong ast.service.ts** | `"system"` (vi phạm FK constraint) | `null` (hợp lệ, đúng chuẩn thiết kế DB) |
+| **Tính nguyên tử (Transaction)** | Ghi match tách rời transaction điểm | Match + Score Withheld + Audit Log nằm chung 1 transaction nguyên tử |
+| **Idempotency** | Ghi log mới không kiểm tra | Kiểm tra `findFirst` trước khi tạo log |
+| **Code nộp > 100.000 ký tự** | Âm thầm cắt ngắn code | Từ chối phân tích và báo lỗi `FAILED` minh bạch |
+| **Build backend TypeScript** | Lỗi TS18046 tại auth.controller.ts | Khắc phục type assertion, biên dịch sạch sẽ |
+
+---
+
+### 19.4. Files Đã Thay Đổi
+
+| File | Loại | Nội dung thay đổi |
+|:-----|:----:|:------------------|
+| [schema.prisma](file:///f:/PROJECT/github%20project/SWP391/SWP391_Group3/apps/api/prisma/schema.prisma) | Modified | Đổi `editorId` và quan hệ `editor` thành nullable (`String?` / `User?`) |
+| [ast.service.ts](file:///f:/PROJECT/github%20project/SWP391/SWP391_Group3/apps/api/src/services/ast.service.ts) | Modified | Gom transaction, gán `editorId: null`, thêm guard idempotent, báo lỗi nếu > 100k ký tự |
+| [auth.controller.ts](file:///f:/PROJECT/github%20project/SWP391/SWP391_Group3/apps/api/src/controllers/auth.controller.ts) | Modified | Ép kiểu an toàn `userInfo` cho Google OAuth access token flow |
+| [An_record.md](file:///f:/PROJECT/github%20project/SWP391/SWP391_Group3/docs/04_context/An_record.md) | Modified | Bổ sung đầy đủ Giai đoạn 19 |
+
+---
+
+### 19.5. Tiêu Chí Nghiệm Thu E2E (Sẵn Sàng Cho Nhật Chạy Lại)
+Khi chạy `thu_nop_bai_e2e.ps1`, cả 4 tiêu chí sẽ đạt:
+```
+[DAT]  Bai 1 astCheckStatus = DONE
+[DAT]  Bai 2 astCheckStatus = DONE
+[DAT]  Bai 2 status = SCORE_WITHHELD
+[DAT]  Co 1 cap DANGER, mode ast, ~100%
+```

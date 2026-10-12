@@ -261,14 +261,14 @@ model Appeal {
 model ScoreAuditLog {
   id           String     @id @default(uuid())
   submissionId String     @map("submission_id")
-  editorId     String     @map("editor_id")
+  editorId     String?    @map("editor_id")
   oldScore     Float?     @map("old_score")
   newScore     Float      @map("new_score")
   reason       String     @db.Text
   createdAt    DateTime   @default(now()) @map("created_at")
 
   submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  editor       User       @relation(fields: [editorId], references: [id], onUpdate: NoAction)
+  editor       User?      @relation(fields: [editorId], references: [id], onUpdate: NoAction)
 
   // IDX-L1: Audit trail truy vấn nhanh theo bài nộp + thời gian
   @@index([submissionId, createdAt], name: "idx_audit_submission_time")

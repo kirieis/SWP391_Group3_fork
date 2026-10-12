@@ -47,7 +47,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
                         message: "Google access_token không hợp lệ hoặc đã hết hạn.",
                     });
                 }
-                const userInfo = await userInfoResponse.json();
+                const userInfo = (await userInfoResponse.json()) as { email?: string; name?: string };
                 verifiedEmail = (userInfo.email || "").trim().toLowerCase();
                 verifiedName = userInfo.name || verifiedEmail.split("@")[0];
             } catch {

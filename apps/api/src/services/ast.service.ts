@@ -87,8 +87,15 @@ function extractJavaSourceFromZip(filePath: string): { sourceCode: string; error
             return { sourceCode: "", error: "Nội dung code sau khi lọc rỗng." };
         }
 
+        if (combinedCode.length > MAX_SOURCE_CHARS_FOR_ENGINE) {
+            return {
+                sourceCode: "",
+                error: `Bài nộp quá lớn (${combinedCode.length.toLocaleString()} ký tự > giới hạn ${MAX_SOURCE_CHARS_FOR_ENGINE.toLocaleString()}), không thể phân tích an toàn.`,
+            };
+        }
+
         return {
-            sourceCode: combinedCode.slice(0, MAX_SOURCE_CHARS_FOR_ENGINE),
+            sourceCode: combinedCode,
         };
     } catch (err: any) {
         console.error(`[astService] Lỗi giải nén file ${filePath}:`, err?.message);
@@ -270,48 +277,66 @@ export const astService = {
                             }));
                         }
 
-                        await prisma.plagiarismMatch.upsert({
-                            where: { submission1Id_submission2Id: { submission1Id: s1, submission2Id: s2 } },
-                            create: {
-                                submission1Id: s1,
-                                submission2Id: s2,
-                                similarityPercent: match.similarity_percent,
-                                level: match.level,
-                                mode: match.mode,
-                                matchedFragments: JSON.stringify(fragments),
-                            },
-                            update: {
-                                similarityPercent: match.similarity_percent,
-                                level: match.level,
-                                mode: match.mode,
-                                matchedFragments: JSON.stringify(fragments),
-                            },
-                        });
-
-                        // ── Bước 7: Cặp DANGER → Giữ điểm chờ Giảng viên xác nhận (Fix Lỗi 3) ──
-                        if (match.level === "DANGER" && match.flag === "PLAGIARISM_DETECTED") {
+                        // ── Bước 6 & 7: Transaction nguyên tử ghi PlagiarismMatch + xử lý DANGER (Fix Lỗi 1 & 2) ──
+                        const isDanger = match.level === "DANGER" && match.flag === "PLAGIARISM_DETECTED";
+                        if (isDanger) {
                             hasDanger = true;
-                            const peerId = [s1, s2].find((id) => id !== submissionId);
+                        }
 
-                            await prisma.$transaction(async (tx) => {
-                                // Tạm giữ điểm số của bài nộp nghi vấn
+                        const peerId = [s1, s2].find((id) => id !== submissionId);
+
+                        await prisma.$transaction(async (tx) => {
+                            // 1. Lưu hoặc cập nhật kết quả so khớp
+                            await tx.plagiarismMatch.upsert({
+                                where: { submission1Id_submission2Id: { submission1Id: s1, submission2Id: s2 } },
+                                create: {
+                                    submission1Id: s1,
+                                    submission2Id: s2,
+                                    similarityPercent: match.similarity_percent,
+                                    level: match.level,
+                                    mode: match.mode,
+                                    matchedFragments: JSON.stringify(fragments),
+                                },
+                                update: {
+                                    similarityPercent: match.similarity_percent,
+                                    level: match.level,
+                                    mode: match.mode,
+                                    matchedFragments: JSON.stringify(fragments),
+                                },
+                            });
+
+                            // 2. Nếu phát hiện vi phạm DANGER: Tạm giữ điểm và ghi nhật ký kiểm toán (Idempotent)
+                            if (isDanger) {
                                 await tx.submission.update({
                                     where: { id: submissionId },
                                     data: { status: "SCORE_WITHHELD" },
                                 });
 
-                                // Ghi log kiểm toán: Giữ nguyên điểm cũ, không tự gán 0 điểm trước khi GV duyệt
-                                await tx.scoreAuditLog.create({
-                                    data: {
+                                const auditReason = `Nghi ngờ đạo văn (${match.similarity_percent.toFixed(1)}% với bài ${peerId}) — Hệ thống tạm giữ điểm chờ Giảng viên xác nhận.`;
+
+                                // Guard Idempotency: Kiểm tra xem đã có log tương tự chưa trước khi tạo mới (Lỗi 3)
+                                const existingAuditLog = await tx.scoreAuditLog.findFirst({
+                                    where: {
                                         submissionId,
-                                        editorId: "system",
-                                        oldScore: submission.totalScore,
-                                        newScore: submission.totalScore ?? 0, // Giữ điểm hiện có, chờ GV quyết định
-                                        reason: `Nghi ngờ đạo văn (${match.similarity_percent.toFixed(1)}% với bài ${peerId}) — Hệ thống tạm giữ điểm chờ Giảng viên xác nhận.`,
+                                        reason: { contains: "Nghi ngờ đạo văn" },
                                     },
                                 });
-                            });
 
+                                if (!existingAuditLog) {
+                                    await tx.scoreAuditLog.create({
+                                        data: {
+                                            submissionId,
+                                            editorId: null, // Hành động tự động từ hệ thống AST Engine (không vi phạm FK User)
+                                            oldScore: submission.totalScore,
+                                            newScore: submission.totalScore ?? 0,
+                                            reason: auditReason,
+                                        },
+                                    });
+                                }
+                            }
+                        });
+
+                        if (isDanger) {
                             emitGradingProgress({
                                 submissionId,
                                 step: "AST_ANALYSIS",
