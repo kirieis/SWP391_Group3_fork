@@ -9,7 +9,7 @@ const EMAIL_REGEX = /^[^@\s]+@(fpt|fe)\.edu\.vn$/;
 
 export const loginWithGoogle = async (req: Request, res: Response) => {
     try {
-        const { credential, email: mockEmail } = req.body;
+        const { credential, email: mockEmail, access_token, name: googleName } = req.body;
 
         let email = "";
         let fullName = "";
@@ -26,9 +26,50 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             }
             email = mockEmail.trim().toLowerCase();
             fullName = email.split("@")[0].toUpperCase();
+
+        // =========================================================================
+        // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
+        //    Frontend nhận access_token → gọi Google UserInfo API lấy email
+        //    Backend nhận lại email đã xác thực để validate domain
+        // =========================================================================
+        } else if (credential === "google_access_token" && access_token && mockEmail) {
+            // Xác minh access_token với Google UserInfo API
+            let verifiedEmail = "";
+            let verifiedName = "";
+            try {
+                const userInfoResponse = await fetch(
+                    `https://www.googleapis.com/oauth2/v3/userinfo`,
+                    { headers: { Authorization: `Bearer ${access_token}` } }
+                );
+                if (!userInfoResponse.ok) {
+                    return res.status(401).json({
+                        success: false,
+                        message: "Google access_token không hợp lệ hoặc đã hết hạn.",
+                    });
+                }
+                const userInfo = await userInfoResponse.json();
+                verifiedEmail = (userInfo.email || "").trim().toLowerCase();
+                verifiedName = userInfo.name || verifiedEmail.split("@")[0];
+            } catch {
+                return res.status(401).json({
+                    success: false,
+                    message: "Không thể xác thực với Google. Vui lòng thử lại.",
+                });
+            }
+
+            // Đảm bảo email từ Google khớp email frontend gửi (chống giả mạo)
+            if (verifiedEmail !== mockEmail.trim().toLowerCase()) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Email không khớp với tài khoản Google đã chọn.",
+                });
+            }
+            email = verifiedEmail;
+            fullName = googleName || verifiedName;
+
         } else {
             // =====================================================================
-            // 2. XÁC THỰC GOOGLE ID TOKEN THẬT
+            // 3. XÁC THỰC GOOGLE ID TOKEN THẬT (dự phòng cho tương lai)
             // =====================================================================
             if (!credential || typeof credential !== "string") {
                 return res.status(400).json({ success: false, message: "Thiếu Google credential." });
@@ -52,6 +93,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             email = payload.email.trim().toLowerCase();
             fullName = payload.name || email.split("@")[0];
         }
+
 
         // 3. Kiểm tra domain FPT theo SRS mục 6.7.1
         if (!EMAIL_REGEX.test(email)) {

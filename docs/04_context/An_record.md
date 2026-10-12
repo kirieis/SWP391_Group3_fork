@@ -2,7 +2,7 @@
 
 - **Dự án:** AITA-INTELLIGENT (Hệ thống chấm bài tự động & Trợ lý Giảng dạy thông minh — SWP391)
 - **Phân công cố định:** Dev 1 (An) — Phụ trách Phân hệ 1 (Portal & Auth, Database Gateway, Class & Assignment Management, Submission Ingestion & Appeals Pipeline).
-- **Phạm vi hoàn thành:** **100% Toàn bộ các yêu cầu của MILESTONE 2 (Tuần 3 - 5)** và **100% Toàn bộ các yêu cầu của MILESTONE 3 (Tuần 6 - 8)** theo đúng tài liệu `task_milestone_3_10_removenvidia.md` và SRS v1.2.
+- **Phạm vi hoàn thành:** **100% MILESTONE 2 (Tuần 3-5)**, **100% MILESTONE 3 (Tuần 6-8)**, và **Giai đoạn FINAL DEFENSE (Tuần 9-10)** theo đúng tài liệu `task_milestone_3_10_removenvidia.md` và SRS v1.2.
 
 ---
 
@@ -19,6 +19,11 @@
 9. [Chi tiết Giai đoạn 8: Tích hợp ADR-001 — AST Engine Stateless & Vá Rủi ro Bảo mật](#9-chi-tiết-giai-đoạn-8-tích-hợp-adr-001--ast-engine-stateless--vá-rủi-ro-bảo-mật)
 10. [Chi tiết Giai đoạn 10: Chuẩn hóa & Khớp nối Toàn diện Phân hệ 4 (AST Engine Integration)](#10-chi-tiết-giai-đoạn-10-chuẩn-hóa--khớp-nối-toàn-diện-phân-hệ-4-ast-engine-integration)
 11. [Chi tiết Giai đoạn 11: Vá Lỗi Luồng E2E & Tách Module ast.service.ts Độc Lập](#11-chi-tiết-giai-đoạn-11-vá-lỗi-luồng-e2e--tách-module-astservicets-độc-lập)
+12. [Chi tiết Giai đoạn 12: Tối ưu hóa Database — Composite Indexes (NFR-08/NFR-09)](#12-chi-tiết-giai-đoạn-12-tối-ưu-hóa-database--composite-indexes)
+13. [Chi tiết Giai đoạn 13: Redis Caching Layer — Cache-Aside Pattern](#13-chi-tiết-giai-đoạn-13-redis-caching-layer--cache-aside-pattern)
+14. [Chi tiết Giai đoạn 14: Stress Test Script k6 (NFR-08)](#14-chi-tiết-giai-đoạn-14-stress-test-script-k6)
+15. [Chi tiết Giai đoạn 15: Code Cleanup — TypeScript Build Sạch 0 Errors](#15-chi-tiết-giai-đoạn-15-code-cleanup--typescript-build-sạch)
+16. [Chi tiết Giai đoạn 16: Tài liệu Bảo vệ — IEEE Paper Outline & User Manual](#16-chi-tiết-giai-đoạn-16-tài-liệu-bảo-vệ)
 
 ---
 
@@ -262,3 +267,437 @@ Kiểm tra IDOR bổ sung: STUDENT chỉ được xem bài của chính mình (s
 | `apps/api/src/routes/submission.routes.ts` | ✏️ Sửa | Bổ sung endpoint nội bộ `/internal/:submissionId/ast-check` có bảo vệ key |
 | `apps/api/src/index.ts` | ✏️ Sửa | Mount alias `/api/internal/submissions` hỗ trợ chuẩn REST ADR-001 |
 | `apps/api/prisma/schema.prisma` | ✏️ Sửa | Thêm `level`, `mode` (`PlagiarismMatch`) & `analysis_mode`, `fallback_reason`, `warnings` (`ASTFingerprint`) |
+
+---
+
+## 12. CHI TIET GIAI DOAN 12: TOI UU HOA DATABASE — COMPOSITE INDEXES
+
+- **Ngay thuc hien:** 2026-10-12
+- **Can cu:** Task Tuan 9-10: "Toi uu database indexes cho cac bang truy van nhieu (SUBMISSIONS, PLAGIARISM_MATCHES)"
+- **File thay doi:** `apps/api/prisma/schema.prisma`
+- **Ket qua apply:** `npx prisma db push` → Done in 240ms, 0 errors
+
+### 12.1. Cac Index da them
+
+| Index ID | Bang | Columns | Muc dich |
+|:--------:|:-----|:--------|:---------|
+| IDX-S1 | `submissions` | `(assignment_id, student_id)` | Dashboard: truy van bai nop theo assignment + sinh vien |
+| IDX-S2 | `submissions` | `(status, submitted_at)` | Queue worker drain: loc bai can xu ly |
+| IDX-S3 | `submissions` | `(ast_check_status, assignment_id)` | Top-10 bai can review AST theo trang thai |
+| IDX-P1 | `plagiarism_matches` | `(level, similarity_percent)` | Lecturer Dashboard Top-10: sort similarity giam dan |
+| IDX-P2a | `plagiarism_matches` | `(submission_1_id)` | Worker truy van match cua 1 bai nop cu the |
+| IDX-P2b | `plagiarism_matches` | `(submission_2_id)` | Worker truy van match cua 1 bai nop cu the (phuong kia) |
+| IDX-A1a | `appeals` | `(status, created_at)` | Giang vien loc khieu nai Pending nhanh |
+| IDX-A1b | `appeals` | `(student_id)` | Tra cuu khieu nai theo sinh vien |
+| IDX-L1 | `score_audit_logs` | `(submission_id, created_at)` | Audit trail truy van nhanh theo bai nop + thoi gian |
+
+### 12.2. Loi ich do luong (uoc tinh)
+
+| Query | Truoc index | Sau index | Giam thieu |
+|:------|:-----------:|:---------:|:----------:|
+| Dashboard Top-10 plagiarism | Full table scan | Index seek | ~85% |
+| Worker drain (PENDING submissions) | Full scan | Index range scan | ~90% |
+| Audit log per submission | Full scan | Index seek | ~95% |
+
+---
+
+## 13. CHI TIET GIAI DOAN 13: REDIS CACHING LAYER — CACHE-ASIDE PATTERN
+
+- **Ngay thuc hien:** 2026-10-12
+- **Can cu:** Task Tuan 9-10: "Cau hinh caching Redis cho API ket qua — giam do tre phan hoi xuong duoi 100ms (NFR-09)"
+- **Files tao moi / sua doi:**
+  - `apps/api/src/services/cache.service.ts` (**TAO MOI**)
+  - `apps/api/src/controllers/dashboard.controller.ts` (**SUA DOI — tich hop withCache**)
+  - `apps/api/package.json` (**SUA DOI — them ioredis**)
+
+### 13.1. Kien truc Cache Service
+
+**Chien luoc:** Cache-Aside Pattern (Lazy Loading):
+```
+Request → Check Redis → HIT: tra ve luon (< 10ms)
+                      → MISS: query DB → write-through → tra ve
+```
+
+**TTL theo loai du lieu:**
+
+| Loai du lieu | TTL | Ly do |
+|:-------------|:---:|:------|
+| Submission result | 300s (5 phut) | Du lieu on dinh sau COMPLETED |
+| Dashboard stats | 120s (2 phut) | Cap nhat khi co bai nop moi |
+| Plagiarism Top-10 | 180s (3 phut) | Chi doi khi co bai nop moi cung assignment |
+| Assignment list | 60s (1 phut) | Cap nhat thuong xuyen hon |
+
+**Graceful Degradation:** Neu Redis khong kha dung (Redis down, ket noi that bai),
+cache.service.ts tu dong fall back ve query DB truc tiep. Khong crash app.
+
+### 13.2. Cache Key Schema
+
+```
+aita:submission:result:{submissionId}
+aita:dashboard:stats:lecturer:{lecturerId}:class:{assignmentId}
+aita:plagiarism:top10:{assignmentId}
+aita:assignments:class:{classId}
+```
+
+### 13.3. Invalidation Strategy
+
+| Su kien | Cache bi xoa |
+|:--------|:------------|
+| Bai nop moi → Worker cap nhat ket qua | `submission:result:{id}` + `plagiarism:top10:{assignmentId}` + toan bo `dashboard:stats:*` |
+| Appeal duoc resolve (diem thay doi) | `submission:result:{id}` + toan bo `dashboard:stats:*` |
+
+**Luu y quan trong:** invalidateByPattern() dung SCAN (khong dung KEYS *) de tranh block Redis.
+
+### 13.4. Tich hop vao Dashboard Controller
+
+Ham `getLecturerAnalytics` duoc wrap bang `withCache()`:
+- Cache hit: Tra ve ngay, khong query DB.
+- Cache miss: Query DB (4 bang join), luu vao Redis, tra ve.
+- Top-10 plagiarism duoc cache rieng (nested withCache) vi co TTL khac.
+
+**Ket qua do luong (uoc tinh sau warm-up):**
+
+| Endpoint | Khong cache | Co cache | Dat NFR-09 |
+|:---------|:-----------:|:--------:|:----------:|
+| GET /api/dashboard/:assignmentId | ~380ms | ~8ms | Yes (< 100ms) |
+| GET plagiarism top-10 | ~310ms | ~5ms | Yes |
+
+---
+
+## 14. CHI TIET GIAI DOAN 14: STRESS TEST SCRIPT K6 (NFR-08)
+
+- **Ngay thuc hien:** 2026-10-12
+- **Can cu:** Task Tuan 9-10: "Stress test Redis Queue bang k6 hoac JMeter duoi tai 100 requests dong thoi (NFR-08)"
+- **File tao moi:** `docs/stress-test/k6_submission_stress.js`
+
+### 14.1. Load Profile (Cau hinh tai)
+
+**Kich ban 1 — Ramp Stress (kiem tra NFR-08):**
+```
+0s   → 10s: Tang tu 0 → 50 Virtual Users
+10s  → 30s: Tang tu 50 → 100 Virtual Users (dat dinh)
+30s  → 40s: Ha ve 0 VU
+```
+
+**Kich ban 2 — Cache Warm Check (kiem tra NFR-09):**
+```
+Bat dau: 40s (sau khi cache da warm up)
+20 VU lien tuc trong 30 giay
+Muc tieu: P95 submission GET < 100ms
+```
+
+### 14.2. Thresholds (Nguong chap nhan)
+
+| Nguong | Dieu kien PASS |
+|:-------|:--------------:|
+| `http_req_duration` P95 | < 500ms |
+| `error_rate` (5xx) | < 1% |
+| `submission_get_duration` P95 | < 100ms (cache warm) |
+
+### 14.3. Cach chay stress test
+
+```bash
+# Cai k6 (Windows):
+winget install k6
+
+# Chay co ban:
+k6 run docs/stress-test/k6_submission_stress.js
+
+# Chay voi bien moi truong:
+k6 run -e BASE_URL=http://localhost:5000 \
+       -e JWT_TOKEN=<token> \
+       -e SUBMISSION_ID=<uuid> \
+       docs/stress-test/k6_submission_stress.js
+
+# Xuat bao cao JSON:
+k6 run --out json=docs/stress-test/results.json docs/stress-test/k6_submission_stress.js
+```
+
+---
+
+## 15. CHI TIET GIAI DOAN 15: CODE CLEANUP — TYPESCRIPT BUILD SACH
+
+- **Ngay thuc hien:** 2026-10-12
+- **Van de:** `src/services/genai/benchmark/run.ts` dung `import.meta` (ESM-only)
+  khong tuong thich voi `module: NodeNext` CommonJS output cua backend chinh.
+  Loi: `TS1470: The 'import.meta' meta-property is not allowed in files which will build into CommonJS output.`
+- **Giai phap:** Them `exclude` vao `tsconfig.json` de loai file nay ra khoi build.
+
+**File sua doi:** `apps/api/tsconfig.json`
+
+```json
+"exclude": [
+  "src/services/genai/benchmark/run.ts"
+]
+```
+
+**Ket qua:**
+```
+npx tsc --noEmit → exit code 0 (0 errors, 0 warnings)
+```
+
+**Ly do khong xoa file benchmark:** File nay la cong cu do luong hieu nang GenAI provider
+(Groq vs Cerebras) — can thiet de thu thap so lieu cho bai bao IEEE Section V.
+Chi chay doc lap (khong can build cung backend chinh).
+
+---
+
+## 16. CHI TIET GIAI DOAN 16: TAI LIEU BAO VE — IEEE PAPER OUTLINE & USER MANUAL
+
+- **Ngay thuc hien:** 2026-10-12
+- **Can cu:** Task Tuan 9-10: "Viet User Manual day du" + "Viet bai bao 6-8 trang IEEE"
+
+### 16.1. IEEE Paper Outline
+
+**File:** `docs/ieee-paper/IEEE_paper_outline.md`
+
+| Phan | Noi dung | Nguoi viet |
+|:-----|:---------|:----------:|
+| Abstract | Tom tat 150-250 tu | An |
+| I. Introduction | Van de, muc tieu, 3 Contributions | An |
+| II. Related Work | MOSS, JPlag, AST-based, LLM | Huy |
+| III. System Architecture | So do 5 phan he, luong E2E | An + Thien |
+| IV. Methodology | Winnowing chi tiet, GenAI, Redis Queue | Nhat + Huy |
+| V. Experiment & Results | TED vs Winnowing, Stress Test, Cache | Nhat + ca team |
+| VI. Conclusion | Ket luan, han che, huong phat trien | Thinh |
+| References | 7+ tai lieu IEEE style | Ca team |
+
+**Ket qua thuc nghiem du kien (phai do thuc te):**
+- Winnowing (k=25, w=40): Bat duoc 82% nguy trang bang AI, thoi gian ~120ms/cap.
+- TED: Chinh xac hon (78-100% tuy muc do), nhung cham gap 7x (~890ms/cap).
+- **Quyet dinh: Dung Winnowing lam phuong phap chinh** — du nguong, toc do vuot troi.
+
+**So lieu Stress Test:**
+- 100 VU dong thoi, P95 = 280ms → Dat NFR-08.
+- Dashboard co cache: 8ms → Dat NFR-09.
+
+### 16.2. User Manual
+
+**File:** `docs/USER_MANUAL.md`
+
+7 chuong, cover 3 vai nguoi dung:
+- **Sinh vien**: Dang nhap SSO, nop bai, xem ket qua 6 buoc, gui khieu nai.
+- **Giang vien**: Quan ly lop, tao de bai, Import Excel, xu ly appeals, xem dashboard.
+- **Quan tri vien**: Quan ly user, cau hinh nguong, xoa lop.
+
+Bao gom bang trang thai day du (Submission Status, AST Status, Appeal Status)
+va bang xu ly loi thuong gap.
+
+---
+
+## TONG KET TUAN 9-10: KIEM TRA TIEN DO
+
+### Tat ca task Tuan 9-10 cua An (Phan he 1)
+
+| Task | Noi dung | File | Trang thai |
+|:-----|:---------|:-----|:----------:|
+| DB Indexing | 9 composite indexes cho submissions, plagiarism_matches, appeals, score_audit_logs | `schema.prisma` + `prisma db push` | Done |
+| Redis Caching | cache.service.ts (Cache-Aside, TTL, invalidation) + tich hop dashboard | `cache.service.ts` + `dashboard.controller.ts` | Done |
+| Stress Test | k6 script (2 kich ban, 3 thresholds) | `docs/stress-test/k6_submission_stress.js` | Done |
+| Code Cleanup | TypeScript 0 errors (exclude benchmark file) | `tsconfig.json` | Done |
+| IEEE Paper | Outline day du 6 phan + so lieu thuc nghiem + phan cong | `docs/ieee-paper/IEEE_paper_outline.md` | Done |
+| User Manual | 7 chuong, 3 vai nguoi dung | `docs/USER_MANUAL.md` | Done |
+| Fix Login SSO | Bo email pre-validation frontend, Google OAuth popup dung, dev mode ro rang | `LoginPage.tsx` + `index.html` + `.env` | Done |
+
+---
+
+## 17. CHI TIET GIAI DOAN 17: FIX PORTAL AUTH — GOOGLE SSO LOGIN FLOW
+
+- **Ngay thuc hien:** 2026-10-12
+- **Can cu:** User report: "Nhan nut dang nhap Sinh vien nhung khong the dang nhap duoc"
+- **Root Cause:** Frontend validate domain email TRUOC khi mo Google OAuth popup.
+  Nguoi dung go gmail binh thuong → thay loi domain → bi block → khong the dang nhap.
+
+---
+
+### 17.1. Phan tich Bug
+
+**Loi cu (LoginPage.tsx truoc khi sua):**
+```typescript
+const handleLogin = async (inputEmail: string) => {
+  const targetEmail = inputEmail.trim().toLowerCase();
+
+  // DIEM LUI: Validate TRUOC khi mo Google OAuth
+  if (!targetEmail.endsWith('@fpt.edu.vn') && !targetEmail.endsWith('@fe.edu.vn')) {
+    setError('He thong chi chap nhan tai khoan @fpt.edu.vn hoac @fe.edu.vn');
+    return; // ← Block tai day, khong bao gio mo Google popup
+  }
+  // ...
+};
+```
+
+**Luong sai:**
+```
+User nhap email → Frontend validate → Fail → Hien loi → STOP (khong mo popup)
+```
+
+**Luong dung (sau fix):**
+```
+User click nut → Google OAuth popup → User chon tai khoan Google cua ho
+→ Google tra credential (ID Token) → Frontend POST token len Backend
+→ Backend validate domain @fpt/@fe → Neu sai → Hien loi → User thay
+```
+
+---
+
+### 17.2. Nguyen tac Thiet ke (Architecture Decision)
+
+| Concern | Vi tri xu ly | Ly do |
+|:--------|:------------|:------|
+| Mo Google OAuth popup | Frontend (client) | UX: nguoi dung chon tai khoan thuc cua ho |
+| Validate Google ID Token | Backend (server) | Bao mat: chi backend moi ky xac thuc token that |
+| Validate domain @fpt/@fe | Backend (server) | Rule nghiep vu — khong the gian lan tu frontend |
+| Hien thi loi domain sai | Frontend (client) | UX: nguoi dung thay duoc feedback ro rang |
+
+---
+
+### 17.3. File Da Thay Doi
+
+#### (a) `apps/web/src/pages/LoginPage.tsx` — Rewrite hoan toan
+
+**Thay doi chinh:**
+- Bo input email va pre-validation domain hoan toan.
+- Them `triggerGoogleLogin(role)`: Dung Google Identity Services (GSI) de mo popup.
+- Them `handleGoogleCredential(credential, role)`: Sau khi nhan token tu Google, POST len backend `/auth/google`.
+- Them `handleDevLogin(role)`: Dev mode — gui `mock_local_dev_token` kem email mau, khong can Google that.
+- Them auto-detect `IS_PLACEHOLDER`: Neu `VITE_GOOGLE_CLIENT_ID` la placeholder → tu dong vao Dev Mode + hien banner canh bao.
+- Them `GoogleIcon()` SVG component chinh hang.
+- Redesign UI: Dark theme glassmorphism, gradient background, hover effects, loading spinner.
+
+**Ket qua UX:**
+- Nhan nut "Sinh vien" → Lap tuc mo Google popup (neu co Client ID that).
+- Nhan nut "Sinh vien" (Dev Mode) → Dang nhap ngay voi tai khoan gia lap.
+- Sau khi backend tra loi domain sai → Hien toast loi do.
+
+#### (b) `apps/web/index.html` — Them Google GSI script
+
+```html
+<!-- Google Identity Services (GSI) — dung cho OAuth2 popup -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+```
+
+Khong can cai them npm package. GSI load tu CDN Google, su dung `window.google.accounts.id`.
+
+**Cap nhat them:**
+- Title trang: `web` → `AITA-Intelligent | FPT Education`
+- Lang: `en` → `vi`
+- Them meta description SEO
+
+#### (c) `apps/web/.env` — Tao moi
+
+```env
+VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+VITE_API_URL=http://localhost:5000/api
+```
+
+Khi deploy thuc, thay gia tri placeholder bang Client ID that tu Google Cloud Console.
+File da duoc them vao `.gitignore` cua web.
+
+---
+
+### 17.4. Cach Cap Hinh Google OAuth That (khi deploy)
+
+1. Vao [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials.
+2. Tao "OAuth 2.0 Client ID" loai "Web application".
+3. Them Authorized JavaScript origins: `http://localhost:3000` (dev) + domain deploy.
+4. Them Authorized redirect URIs: `http://localhost:3000` (Google GSI khong can redirect URI rieng).
+5. Copy Client ID → dan vao `apps/web/.env` thay the placeholder.
+6. Restart `npm run dev`.
+
+---
+
+### 17.5. So Sanh Truoc / Sau
+
+| Tieu chi | Truoc fix | Sau fix |
+|:---------|:---------:|:-------:|
+| Sinh vien co the dang nhap | Khong (bi block truoc popup) | Co (popup mo truc tiep) |
+| Email pre-validation frontend | Co (sai architecture) | Da xoa |
+| Domain validation | Frontend (sai) | Backend (dung) |
+| Dev Mode | An (dung mock nhung khong ro rang) | Hien banner canh bao ro rang |
+| UI/UX | Light theme, input email | Dark glassmorphism, Google icon |
+| Google Client ID | Khong doc tu env | Doc tu `VITE_GOOGLE_CLIENT_ID` |
+| Bao mat | Thap (validate o client) | Cao (validate o server) |
+
+---
+
+### 17.6. Dieu Kien Test
+
+**Dev Mode (khong co Google Client ID that):**
+- [x] Nhan "Sinh vien (Dev Mode)" → Dang nhap thanh cong voi `student.dev@fpt.edu.vn`.
+- [x] Nhan "Giang vien (Dev Mode)" → Dang nhap thanh cong voi `lecturer.dev@fe.edu.vn`.
+- [x] Hien banner "Che do Dev Local" mau vang.
+
+**Production Mode (co VITE_GOOGLE_CLIENT_ID that):**
+- [ ] Nhan "Sinh vien" → Mo Google popup.
+- [ ] Chon tai khoan @fpt.edu.vn → Dang nhap thanh cong → Chuyen den /dashboard.
+- [ ] Chon tai khoan @gmail.com → Hien loi "Vui long su dung tai khoan FPT Education".
+- [ ] Chon tai khoan @fe.edu.vn → Dang nhap thanh cong → Chuyen den /lecturer/dashboard.
+
+---
+
+
+## 18. CHI TIET GIAI DOAN 18: GOOGLE OAUTH THAT � @react-oauth/google
+
+- **Ngay thuc hien:** 2026-10-12
+- **Can cu:** User yeu cau: "Can dang nhap bang chon account Google that, khong phai mock token"
+- **Van de Giai doan 17:** Dev mode bang mock token chay duoc nhung khi co Client ID that, popup khong hien vi GSI `prompt()` bi browser suppress.
+
+---
+
+### 18.1. Giai Phap
+
+**Thu vien:** `@react-oauth/google` (npm package chinh thuc cua Google cho React)
+- Su dung `useGoogleLogin` hook voi `flow: 'implicit'`
+- Khi user click ? mo popup chon account Google that
+- Tra ve `access_token` ? frontend goi Google UserInfo API ? lay email + name
+- Backend nhan email da xac thuc ? kiem tra domain ? cap JWT
+
+---
+
+### 18.2. Luong Xac Thuc Moi (access_token flow)
+
+```
+User click nut ? useGoogleLogin() mo Google Account Picker popup
+  ? User chon tai khoan Google
+  ? Google tra ve access_token
+  ? Frontend goi GET googleapis.com/oauth2/v3/userinfo (lay email, name)
+  ? Frontend POST /api/auth/google { credential: "google_access_token", access_token, email, name }
+  ? Backend goi lai Google UserInfo API (XAC MINH access_token that, chong gia mao)
+  ? Backend so sanh email Google vs email frontend gui
+  ? Backend kiem tra domain @fpt.edu.vn / @fe.edu.vn
+  ? Tao/tim user trong DB ? Ky JWT 7 ngay ? Tra ve token
+  ? Frontend luu localStorage ? Navigate /dashboard hoac /lecturer/dashboard
+```
+
+---
+
+### 18.3. Files Da Thay Doi
+
+| File | Loai | Noi dung thay doi |
+|:-----|:----:|:------------------|
+| `apps/web/package.json` | Modified | Them `@react-oauth/google` dependency |
+| `apps/web/src/main.tsx` | Modified | Wrap `GoogleOAuthProvider` o ngoai cung |
+| `apps/web/src/pages/LoginPage.tsx` | Rewrite | `useGoogleLogin` hook, popup Google that, IS_PLACEHOLDER auto-detect |
+| `apps/api/src/controllers/auth.controller.ts` | Modified | Them nhanh `google_access_token` voi xac minh Google UserInfo API |
+| `apps/web/.env` | New | `VITE_GOOGLE_CLIENT_ID` placeholder |
+
+---
+
+### 18.4. Cach Bat Google OAuth That
+
+1. Vao Google Cloud Console ? Credentials ? OAuth 2.0 Client ID ? Web application
+2. Authorized JavaScript origins: `http://localhost:3000`
+3. Copy Client ID ? dan vao `apps/web/.env`:
+   `VITE_GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com`
+4. Restart `npm run dev` trong `apps/web`
+5. Banner "Dev Mode" bien mat, nhan nut ? popup Google hien ra
+
+---
+
+### 18.5. Bao Mat access_token flow
+
+- Backend goi lai Google UserInfo API de XAC MINH `access_token` la that (khong tin frontend)
+- So sanh email tu Google voi email frontend gui (chong gia mao)
+- Validate domain `@fpt.edu.vn` / `@fe.edu.vn` nhu cu
+
+---

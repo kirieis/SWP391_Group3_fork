@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma.js";
+import { withCache, CacheKey, TTL, invalidateByPattern } from "../services/cache.service.js";
 
 // Lấy toàn bộ số liệu thống kê cho Lecturer Dashboard (US09 & Wireframe 6.7.4)
 export const getLecturerAnalytics = async (req: Request, res: Response) => {
@@ -10,88 +11,90 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: "Thiếu mã bài tập (assignmentId)." });
         }
 
-        const assignment = await prisma.assignment.findUnique({
-            where: { id: assignmentId },
-            include: {
-                class: {
-                    include: {
-                        // Chỉ đếm sinh viên có status = ACTIVE (loại DROPPED theo SRS US09)
-                        students: {
-                            where: { status: "ACTIVE" },
+        // ━━━ CACHE-ASIDE: stats + plagiarism top-10 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const statsKey = CacheKey.dashboardStats(req.user?.userId ?? "system", assignmentId);
+
+        const result = await withCache(statsKey, TTL.DASHBOARD_STATS, async () => {
+            // ――― DB FETCH (chạy khi cache miss) ―――――――――――――――――――――――――――――――
+            const assignment = await prisma.assignment.findUnique({
+                where: { id: assignmentId },
+                include: {
+                    class: {
+                        include: {
+                            // Chỉ đếm sinh viên có status = ACTIVE (loại DROPPED theo SRS US09)
+                            students: {
+                                where: { status: "ACTIVE" },
+                            },
                         },
                     },
                 },
-            },
-        });
+            });
 
-        if (!assignment) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy bài tập." });
-        }
+            if (!assignment) return null;
 
-        const totalActiveStudents = assignment.class.students.length;
+            const totalActiveStudents = assignment.class.students.length;
 
-        // 1. Lấy danh sách bài nộp của bài tập này
-        const submissions = await prisma.submission.findMany({
-            where: { assignmentId },
-            select: {
-                id: true,
-                studentId: true,
-                totalScore: true,
-                status: true,
-            },
-        });
+            // 1. Lấy danh sách bài nộp của bài tập này
+            const submissions = await prisma.submission.findMany({
+                where: { assignmentId },
+                select: {
+                    id: true,
+                    studentId: true,
+                    totalScore: true,
+                    status: true,
+                },
+            });
 
-        // Số sinh viên duy nhất đã nộp bài
-        const submittedStudentIds = new Set(submissions.map((s) => s.studentId));
-        const submittedCount = submittedStudentIds.size;
-        const submissionRate = totalActiveStudents > 0 ? Number(((submittedCount / totalActiveStudents) * 100).toFixed(1)) : 0;
+            // Số sinh viên duy nhất đã nộp bài
+            const submittedStudentIds = new Set(submissions.map((s) => s.studentId));
+            const submittedCount = submittedStudentIds.size;
+            const submissionRate = totalActiveStudents > 0 ? Number(((submittedCount / totalActiveStudents) * 100).toFixed(1)) : 0;
 
-        // 2. Thống kê phân bố điểm (Score Distribution)
-        const scoreDistribution = {
-            under5: 0,   // < 5.0
-            from5to65: 0, // 5.0 - 6.5
-            from65to8: 0, // 6.5 - 8.0
-            from8to10: 0, // 8.0 - 10.0
-        };
+            // 2. Thống kê phân bố điểm (Score Distribution)
+            const scoreDistribution = {
+                under5: 0,
+                from5to65: 0,
+                from65to8: 0,
+                from8to10: 0,
+            };
 
-        let totalScoreSum = 0;
-        let gradedCount = 0;
+            let totalScoreSum = 0;
+            let gradedCount = 0;
 
-        for (const sub of submissions) {
-            if (sub.totalScore !== null && sub.totalScore !== undefined) {
-                const score = sub.totalScore;
-                totalScoreSum += score;
-                gradedCount++;
+            for (const sub of submissions) {
+                if (sub.totalScore !== null && sub.totalScore !== undefined) {
+                    const score = sub.totalScore;
+                    totalScoreSum += score;
+                    gradedCount++;
 
-                if (score < 5) scoreDistribution.under5++;
-                else if (score < 6.5) scoreDistribution.from5to65++;
-                else if (score < 8) scoreDistribution.from65to8++;
-                else scoreDistribution.from8to10++;
+                    if (score < 5) scoreDistribution.under5++;
+                    else if (score < 6.5) scoreDistribution.from5to65++;
+                    else if (score < 8) scoreDistribution.from65to8++;
+                    else scoreDistribution.from8to10++;
+                }
             }
-        }
 
-        const averageScore = gradedCount > 0 ? Number((totalScoreSum / gradedCount).toFixed(2)) : 0;
+            const averageScore = gradedCount > 0 ? Number((totalScoreSum / gradedCount).toFixed(2)) : 0;
 
-        // 3. Top 10 cặp bài nộp có độ tương đồng đạo văn cao nhất
-        const topPlagiarismMatches = await prisma.plagiarismMatch.findMany({
-            where: {
-                submission1: { assignmentId },
-            },
-            orderBy: { similarityPercent: "desc" },
-            take: 10,
-            include: {
-                submission1: {
-                    include: { student: { include: { user: { select: { fullName: true, email: true } } } } },
-                },
-                submission2: {
-                    include: { student: { include: { user: { select: { fullName: true, email: true } } } } },
-                },
-            },
-        });
+            // 3. Top 10 cặp bài nộp có độ tương đồng đạo văn cao nhất (cache riêng phần này)
+            const top10Key = CacheKey.plagiarismTop10(assignmentId);
+            const topPlagiarismMatches = await withCache(top10Key, TTL.PLAGIARISM_TOP10, () =>
+                prisma.plagiarismMatch.findMany({
+                    where: { submission1: { assignmentId } },
+                    orderBy: { similarityPercent: "desc" },
+                    take: 10,
+                    include: {
+                        submission1: {
+                            include: { student: { include: { user: { select: { fullName: true, email: true } } } } },
+                        },
+                        submission2: {
+                            include: { student: { include: { user: { select: { fullName: true, email: true } } } } },
+                        },
+                    },
+                })
+            );
 
-        return res.json({
-            success: true,
-            data: {
+            return {
                 assignment: {
                     id: assignment.id,
                     title: assignment.title,
@@ -103,7 +106,7 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
                     totalActiveStudents,
                     submittedCount,
                     notSubmittedCount: Math.max(0, totalActiveStudents - submittedCount),
-                    submissionRate, // %
+                    submissionRate,
                     averageScore,
                     scoreDistribution,
                 },
@@ -121,8 +124,14 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
                         submissionId: match.submission2Id,
                     },
                 })),
-            },
+            };
         });
+
+        if (!result) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy bài tập." });
+        }
+
+        return res.json({ success: true, data: result });
     } catch (error) {
         console.error("Lỗi getLecturerAnalytics:", error);
         return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy số liệu thống kê." });

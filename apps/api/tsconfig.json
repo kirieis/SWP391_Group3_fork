@@ -20,5 +20,11 @@
   },
   "include": [
     "src/**/*"                         // Chỉ định trình biên dịch chỉ quét các file nằm trong thư mục src
+  ],
+  "exclude": [
+    // Loại file benchmark GenAI ra khỏi build — dùng import.meta (ESM-only),
+    // không tương thích với NodeNext CommonJS output của backend chính.
+    // File này chạy độc lập bằng: node --input-type=module < run.ts
+    "src/services/genai/benchmark/run.ts"
   ]
 }
