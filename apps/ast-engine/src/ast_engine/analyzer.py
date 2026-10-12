@@ -6,6 +6,8 @@ Luồng xử lý (endpoint POST /analyze sẽ gọi hàm `analyze_source`):
             │
             └─▶ parse_java ──┬─ 0 lỗi cú pháp ─▶ tree_normalizer ─▶ Winnowing ─▶ fingerprint "ast"
                              └─ có lỗi / exception ─▶ ast = None  (matcher sẽ dùng "lex")
+                                lý do ghi vào `fallback_reason`: SYNTAX_ERROR | PARSER_FAILED
+                                                                 | NORMALIZATION_FAILED | PARSE_TIMEOUT
 
 Chính sách: chỉ tin fingerprint "ast" khi parse KHÔNG có lỗi nào. Nếu cho qua cây đã được
 ANTLR "sửa lỗi", kẻ đạo văn có thể cố ý chèn cú pháp hỏng để cây bị cắt cụt, làm tụt điểm giống nhau.
@@ -17,6 +19,7 @@ Hợp đồng với parse_java (xem parsing/parse_java.py): trả về ParseResu
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Optional, Tuple
 
 from ast_engine.fingerprint.winnowing import (
@@ -27,7 +30,13 @@ from ast_engine.fingerprint.winnowing import (
 )
 from ast_engine.normalization.lexer_fallback import tokenize_fallback
 from ast_engine.normalization.tree_normalizer import normalize_tree_with_lines
+from ast_engine.safety import AnalysisTimeout, run_with_timeout
 from ast_engine.similarity.matcher import SubmissionFingerprints
+
+# Ngân sách thời gian cho đường AST (parse + chuẩn hóa + fingerprint) của MỘT bài.
+# Bài bình thường mất ~0.1-0.5 giây; 5 giây đủ rộng cho bài lớn mà vẫn chặn được bài độc hại.
+# Đặt biến môi trường AST_ANALYSIS_TIMEOUT_SECONDS để đổi (0 = không giới hạn).
+DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("AST_ANALYSIS_TIMEOUT_SECONDS", "5.0"))
 
 
 class ParseContractError(TypeError):
@@ -70,6 +79,39 @@ def _run_parser(source: str) -> Tuple[Any, int]:
     return _unpack_parse_result(parse_java(source))
 
 
+def _build_ast_fingerprint(
+    source: str,
+    parse_fn: Optional[Callable[[str], Tuple[Any, int]]],
+    k: int,
+    window: int,
+) -> Tuple[Optional[Fingerprint], int, Optional[str]]:
+    """Đường AST: parse -> chuẩn hóa -> fingerprint. Trả về (fingerprint, số_lỗi, lý_do_fallback)."""
+    # Bước 1: parse. Lỗi bất ngờ của parser (vd. RecursionError với bài lồng quá sâu) -> "lex".
+    try:
+        tree, error_count = (parse_fn or _run_parser)(source)
+    except ParseContractError:  # lỗi lập trình/hợp đồng: phải lộ ra, không được nuốt
+        raise
+    except Exception:
+        return None, 0, "PARSER_FAILED"
+
+    if tree is None or error_count > 0:
+        return None, error_count, "SYNTAX_ERROR"
+
+    # Bước 2: chuẩn hóa + fingerprint. Tách riêng để biết chính xác bước nào hỏng.
+    try:
+        tokens = normalize_tree_with_lines(tree)
+        fp = build_fingerprint(
+            [t.value for t in tokens],
+            [t.line for t in tokens],
+            mode="ast",
+            k=k,
+            window=window,
+        )
+        return fp, 0, None
+    except Exception:
+        return None, 0, "NORMALIZATION_FAILED"
+
+
 def analyze_source(
     submission_id: str,
     source: str,
@@ -77,9 +119,14 @@ def analyze_source(
     k: int = DEFAULT_K,
     window: int = DEFAULT_WINDOW,
     parse_fn: Optional[Callable[[str], Tuple[Any, int]]] = None,
+    timeout_s: Optional[float] = None,
 ) -> SubmissionFingerprints:
-    """Tạo bộ fingerprint ("lex" luôn có, "ast" khi parse sạch) cho một bài nộp."""
-    lex_tokens = tokenize_fallback(source)
+    """Tạo bộ fingerprint ("lex" luôn có, "ast" khi parse sạch và kịp thời gian) cho một bài nộp.
+
+    timeout_s: ngân sách thời gian cho đường AST; None -> DEFAULT_TIMEOUT_SECONDS; 0 -> không giới hạn.
+    Quá hạn -> bỏ "ast", ghi fallback_reason = "PARSE_TIMEOUT" (bài đáng để giảng viên xem lại).
+    """
+    lex_tokens = tokenize_fallback(source)  # luôn chạy, tuyến tính, không bao giờ ném lỗi cú pháp
     lex_fp = build_fingerprint(
         [t.value for t in lex_tokens],
         [t.line for t in lex_tokens],
@@ -88,31 +135,19 @@ def analyze_source(
         window=window,
     )
 
-    ast_fp: Optional[Fingerprint] = None
-    error_count = 0
-    parse_ok = False
+    budget = DEFAULT_TIMEOUT_SECONDS if timeout_s is None else timeout_s
     try:
-        tree, error_count = (parse_fn or _run_parser)(source)
-        if tree is not None and error_count == 0:
-            ast_tokens = normalize_tree_with_lines(tree)
-            ast_fp = build_fingerprint(
-                [t.value for t in ast_tokens],
-                [t.line for t in ast_tokens],
-                mode="ast",
-                k=k,
-                window=window,
-            )
-            parse_ok = True
-    except ParseContractError:  # lỗi lập trình/hợp đồng: phải lộ ra, không được nuốt
-        raise
-    except Exception:  # parser/normalizer lỗi bất ngờ -> vẫn còn fingerprint "lex"
-        ast_fp = None
-        parse_ok = False
+        ast_fp, error_count, reason = run_with_timeout(
+            lambda: _build_ast_fingerprint(source, parse_fn, k, window), budget
+        )
+    except AnalysisTimeout:
+        ast_fp, error_count, reason = None, 0, "PARSE_TIMEOUT"
 
     return SubmissionFingerprints(
         submission_id=submission_id,
         lex=lex_fp,
         ast=ast_fp,
-        parse_ok=parse_ok,
+        parse_ok=ast_fp is not None,
         syntax_error_count=error_count,
+        fallback_reason=reason,
     )

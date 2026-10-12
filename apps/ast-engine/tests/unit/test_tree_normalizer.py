@@ -83,3 +83,10 @@ def test_fixture_cac_muc_nguy_trang_ra_cung_chuoi_token():
 
 def test_fixture_khac_han_thi_khac():
     assert norm(read_fixture("unrelated_linkedlist.java")) != norm(read_fixture("base_sorting.java"))
+
+
+def test_bieu_thuc_cuc_dai_van_chuan_hoa_duoc():
+    """Trước đây đệ quy sập ở ~1000 số hạng và bài âm thầm rơi về chế độ 'lex'."""
+    expr = " + ".join(["a"] * 5000)
+    tokens = norm(WRAP % f"int f(int a) {{ return {expr}; }}")
+    assert tokens.count("VAR") >= 5000

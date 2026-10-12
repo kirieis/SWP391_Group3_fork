@@ -34,3 +34,5 @@ Template0__SWP391_AI_Usage_Report_ Template.xlsx
 # Thư mục lưu file nộp bài (không commit lên Git)
 uploads/
 apps/api/uploads/
+
+*.zip

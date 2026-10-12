@@ -70,12 +70,15 @@ class SubmissionFingerprints:
     ast: Optional[Fingerprint] = None     # None nếu bài không parse được
     parse_ok: bool = False
     syntax_error_count: int = 0
+    # Vì sao không có fingerprint "ast": None | "SYNTAX_ERROR" | "PARSER_FAILED" | "NORMALIZATION_FAILED" | "PARSE_TIMEOUT"
+    fallback_reason: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
             "submission_id": self.submission_id,
             "parse_ok": self.parse_ok,
             "syntax_error_count": self.syntax_error_count,
+            "fallback_reason": self.fallback_reason,
             "lex": self.lex.to_dict(),
             "ast": self.ast.to_dict() if self.ast else None,
         }
@@ -88,6 +91,7 @@ class SubmissionFingerprints:
             ast=Fingerprint.from_dict(data["ast"]) if data.get("ast") else None,
             parse_ok=bool(data.get("parse_ok", False)),
             syntax_error_count=int(data.get("syntax_error_count", 0)),
+            fallback_reason=data.get("fallback_reason"),
         )
 
 

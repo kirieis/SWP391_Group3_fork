@@ -25,7 +25,7 @@ VÌ SAO HIỆU QUẢ?
   * Fingerprint nhỏ hơn nhiều so với toàn bộ k-gram (chỉ ~ 2/(w+1) số hash được giữ).
   * BẢO ĐẢM: nếu hai chuỗi có chung một đoạn dài >= w + k - 1 token thì chắc chắn
     ít nhất 1 hash trùng nhau được chọn ở cả hai fingerprint.
-    Với k = 25, w = 40  ->  ngưỡng đảm bảo = 64 token (khớp SRS v1.2).
+    Với (k, w) mặc định = (15, 25)  ->  ngưỡng đảm bảo = 39 token (SRS v1.2 ghi 25/40 -> 64).
 
 Module này KHÔNG phụ thuộc ANTLR: đầu vào chỉ là danh sách chuỗi (token).
 """
@@ -37,10 +37,10 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-# Giá trị mặc định theo SRS v1.2. Nếu config.py của bạn đã có hằng số K / WINDOW,
-# thay 2 dòng này bằng import từ config để chỉ còn MỘT nguồn sự thật.
-DEFAULT_K = 25
-DEFAULT_WINDOW = 40
+from ast_engine.config import WINNOWING  # noqa: E402  (MỘT nguồn sự thật: config.py)
+
+DEFAULT_K = WINNOWING.k
+DEFAULT_WINDOW = WINNOWING.window
 
 # Hash rolling tính trên modulo số nguyên tố Mersenne 2^61 - 1.
 _MOD = (1 << 61) - 1

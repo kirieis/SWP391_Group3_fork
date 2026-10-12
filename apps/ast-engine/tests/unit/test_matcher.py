@@ -150,3 +150,51 @@ def test_hop_dong_sai_khong_bi_nuot_trong_analyze_source():
     R = namedtuple("R", "tree other")
     with pytest.raises(ParseContractError):
         analyze_source("x", "class A { }", parse_fn=lambda s: _unpack_parse_result(R("T", 1)))
+
+
+# --- Né phân tích AST bằng biểu thức quá dài + lý do rơi về "lex" -----------------
+
+
+def test_them_bieu_thuc_cuc_dai_khong_ep_duoc_bai_ve_che_do_lex(base):
+    """Kịch bản né: chép bài + đảo hàm + chèn một biểu thức 2000 số hạng để làm sập bộ chuẩn hóa."""
+    padding = "    static int pad(int a) { return " + " + ".join(["a"] * 2000) + "; }\n"
+    src = read_fixture("variant_l3_reorder.java")
+    src = src[: src.rindex("}")] + padding + "}\n"
+    evader = analyze_source("evader", src)
+    assert evader.ast is not None and evader.fallback_reason is None
+    m = compare(base, evader)
+    assert m.mode == "ast" and m.similarity_percent > 80.0 and m.level == LEVEL_DANGER
+
+
+def test_fallback_reason_loi_cu_phap():
+    r = analyze_source("x", read_fixture("base_sorting.java") + "\n int int int ;;; {{{ @@@")
+    assert r.fallback_reason == "SYNTAX_ERROR" and r.ast is None and not r.parse_ok
+
+
+def test_fallback_reason_sach_la_none(base):
+    assert base.fallback_reason is None
+
+
+def test_fallback_reason_parser_hong_bat_ngo():
+    def boom(_source):
+        raise RecursionError("parser sập")
+
+    r = analyze_source("x", read_fixture("base_sorting.java"), parse_fn=boom)
+    assert r.fallback_reason == "PARSER_FAILED" and r.ast is None
+    assert r.lex is not None and r.syntax_error_count == 0  # không có lỗi cú pháp thật
+
+
+def test_fallback_reason_chuan_hoa_hong(monkeypatch):
+    import ast_engine.analyzer as az
+
+    def boom(_tree):
+        raise RuntimeError("chuẩn hóa hỏng")
+
+    monkeypatch.setattr(az, "normalize_tree_with_lines", boom)
+    r = analyze_source("x", read_fixture("base_sorting.java"))
+    assert r.fallback_reason == "NORMALIZATION_FAILED" and r.ast is None and not r.parse_ok
+
+
+def test_fallback_reason_khu_hoi_json():
+    r = analyze_source("x", read_fixture("base_sorting.java") + "\n int int int ;;;")
+    assert SubmissionFingerprints.from_dict(r.to_dict()).fallback_reason == "SYNTAX_ERROR"
