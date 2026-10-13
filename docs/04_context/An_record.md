@@ -788,3 +788,47 @@ Khi chạy `thu_nop_bai_e2e.ps1`, cả 4 tiêu chí sẽ đạt:
 [DAT]  Bai 2 status = SCORE_WITHHELD
 [DAT]  Co 1 cap DANGER, mode ast, ~100%
 ```
+
+---
+
+## Giai Doan 20: Hoan Thien 100% Ket Noi Real API Cho Toan Bo Phan He 1 (Student & Lecturer Portals)
+
+### 20.1. Boi Canh & Yeu Cau
+- Xoa bo hoan toan cac mockup tinh o Frontend.
+- Ket noi truc tiep vao toan bo Endpoint that cua Backend (port 5000) va AST Engine (port 8000).
+- Hoan tat Modal Nop bai (.zip upload flow) ho tro multipart/form-data theo tieu chuan US12.
+
+### 20.2. Cac Thay Doi Da Thuc Hien
+
+1. **Cau Hinh Moi Truong (pps/api/.env):**
+   - Bo sung AST_ENGINE_URL= http://localhost:8000
+   - Bo sung INTERNAL_API_KEY=dev_internal_key de ket noi noi bo giua Gateway va Worker/Engine.
+
+2. **Backend API Assignment (pps/api):**
+   - Bo sung Endpoint GET /api/assignments tu dong loc theo Role (Sinh vien chi xem bai tap lop minh hoc, Giang vien xem bai tap lop minh day).
+   - Tra ve thong tin submission gan nhat cua sinh vien de UI hien thi trang thai chinh xac.
+
+3. **Student Dashboard (StudentDashboardPage.tsx):**
+   - Ket noi API GET /api/assignments de lay danh sach bai tap thuc te tu Database.
+   - Xay dung **Modal Nop bai (.zip) Thuc te**:
+     - Ho tro keo tha va chon file .zip.
+     - Kiem tra dung luong <= 10MB ngay tai client.
+     - Gui FormData len POST /api/submissions.
+     - Chuyen huong truc tiep sang trang ket qua sau khi nhan submissionId.
+
+4. **Grading Results Real-time (GradingResultsPage.tsx):**
+   - Ket noi API GET /api/submissions/:id.
+   - Polling cap nhat ket qua tu dong khi trang thai con PENDING.
+   - Tinh toan ty le dao van that tu plagiarismMatches do AST Engine phan tich.
+   - Xu ly gui don phuc khao that len POST /api/submissions/appeal.
+
+5. **Lecturer Dashboard (LecturerDashboardPage.tsx):**
+   - Ket noi GET /api/classes/my-classes va GET /api/dashboard/analytics/:assignmentId.
+   - Hiển thị so lieu sinh vien, ty le nop bai, pho diem va **Top cap trung lap AST that**.
+   - Tich hop **Modal Import Sinh vien Excel that** (POST /api/classes/:classId/import-students).
+   - Tich hop **Modal Tao de bai tap moi that** (POST /api/assignments).
+
+### 20.3. Tinh Trang Build & Run
+- pps/api: 	sc build pass 100% (0 errors).
+- pps/web: ite build pass 100% (0 errors).
+- Phan he 1 da hoan thanh 100% khong con mockup tinh.
