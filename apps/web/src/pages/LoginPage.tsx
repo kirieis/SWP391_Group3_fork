@@ -412,8 +412,8 @@ export default function LoginPage() {
             >
               <ShieldCheck size={13} style={{ color: '#22c55e' }} />
               <span>
-                Chỉ chấp nhận{' '}
-                <strong style={{ color: '#94a3b8' }}>@fpt.edu.vn</strong> /{' '}
+                Sinh viên:{' '}
+                <strong style={{ color: '#94a3b8' }}>Google Account</strong> • Giảng viên:{' '}
                 <strong style={{ color: '#94a3b8' }}>@fe.edu.vn</strong>
               </span>
             </div>

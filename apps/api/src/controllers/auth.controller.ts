@@ -95,16 +95,19 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
         }
 
 
-        // 3. Kiểm tra domain FPT theo SRS mục 6.7.1
-        if (!EMAIL_REGEX.test(email)) {
+        // 3. Phân loại Role và kiểm tra domain theo quy định
+        // - Giảng viên: Bắt buộc phải là email cán bộ trường (@fe.edu.vn)
+        // - Sinh viên: Cho phép mọi tài khoản Google (bao gồm @fpt.edu.vn, @gmail.com, v.v.)
+        const isLecturer = email.endsWith("@fe.edu.vn");
+        const defaultRole: "STUDENT" | "LECTURER" = isLecturer ? "LECTURER" : "STUDENT";
+
+        // Nếu client gửi lên role LECTURER nhưng email không phải @fe.edu.vn -> từ chối
+        if (req.body.role === "LECTURER" && !isLecturer) {
             return res.status(403).json({
                 success: false,
-                message: "Vui lòng sử dụng tài khoản email FPT Education (@fpt.edu.vn hoặc @fe.edu.vn) để đăng nhập.",
+                message: "Tài khoản Giảng viên bắt buộc phải sử dụng email trường (@fe.edu.vn).",
             });
         }
-
-        // 4. Phân loại Role mặc định theo domain
-        const defaultRole: "STUDENT" | "LECTURER" = email.endsWith("@fe.edu.vn") ? "LECTURER" : "STUDENT";
         const code = email.split("@")[0].toUpperCase();
 
         // 5. Tìm hoặc tạo user trong DB (khớp tên quan hệ studentProfile/lecturerProfile/adminProfile)
