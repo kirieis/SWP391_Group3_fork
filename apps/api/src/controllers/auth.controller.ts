@@ -95,19 +95,8 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
         }
 
 
-        // 3. Phân loại Role và kiểm tra domain theo quy định
-        // - Giảng viên: Bắt buộc phải là email cán bộ trường (@fe.edu.vn)
-        // - Sinh viên: Cho phép mọi tài khoản Google (bao gồm @fpt.edu.vn, @gmail.com, v.v.)
-        const isLecturer = email.endsWith("@fpt.edu.vn");
-        const defaultRole: "STUDENT" | "LECTURER" = isLecturer ? "LECTURER" : "STUDENT";
-
-        // Nếu client gửi lên role LECTURER nhưng email không phải @fe.edu.vn -> từ chối
-        if (req.body.role === "LECTURER" && !isLecturer) {
-            return res.status(403).json({
-                success: false,
-                message: "Tài khoản Giảng viên bắt buộc phải sử dụng email trường (@fpt.edu.vn).",
-            });
-        }
+        // 3. Phân loại Role (Lấy theo nút người dùng chọn từ giao diện: LECTURER hoặc STUDENT)
+        const chosenRole: "STUDENT" | "LECTURER" = req.body.role === "LECTURER" ? "LECTURER" : "STUDENT";
         const code = email.split("@")[0].toUpperCase();
 
         // 5. Tìm hoặc tạo user trong DB (khớp tên quan hệ studentProfile/lecturerProfile/adminProfile)
@@ -121,11 +110,11 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
                 data: {
                     email,
                     fullName,
-                    role: defaultRole,
-                    ...(defaultRole === "STUDENT" && {
+                    role: chosenRole,
+                    ...(chosenRole === "STUDENT" && {
                         studentProfile: { create: { studentCode: code } },
                     }),
-                    ...(defaultRole === "LECTURER" && {
+                    ...(chosenRole === "LECTURER" && {
                         lecturerProfile: { create: { lecturerCode: code } },
                     }),
                 },
