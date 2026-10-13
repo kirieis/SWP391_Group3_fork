@@ -40,6 +40,7 @@ services:
       - API_GATEWAY_URL=http://api:5000
       - SANDBOX_URL=http://sandbox:5001
       - GENAI_GATEWAY_URL=http://genai:5002
+      - AST_ENGINE_URL=http://ast-engine:8000
       - INTERNAL_API_KEY=aita_internal_secret_key_2026
       - USE_MOCKS=true
       - NODE_ENV=production

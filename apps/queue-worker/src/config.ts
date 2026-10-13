@@ -37,9 +37,9 @@ const envSchema = z.object({
   AI_REVIEW_RETRY_DELAY_MS: z.coerce.number().int().positive().default(30000),
   AI_REVIEW_MAX_RETRY_ROUNDS: z.coerce.number().int().positive().default(3),
 
-  // Module 4 — AST Plagiarism Engine (Nhật)
-  AST_ENGINE_URL: z.string().url().default("http://localhost:8001"),
-  AST_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+  // Module 4 — AST Plagiarism Engine (Nhật, port 8000; timeout > 10s analyze + 30s compare/batch per B4)
+  AST_ENGINE_URL: z.string().url().default("http://localhost:8000"),
+  AST_TIMEOUT_MS: z.coerce.number().int().positive().default(45000),
 
   // Pipeline overall timeout
   PIPELINE_TIMEOUT_MS: z.coerce.number().int().positive().default(90000),

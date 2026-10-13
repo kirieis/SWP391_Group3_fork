@@ -145,12 +145,16 @@ export class MockAstClient implements IAstClient {
       : "No significant similarity detected";
 
     logger.info(
-      { submissionId: request.submissionId, similarityPercent },
+      { submissionId: request.submissionId, similarityPercent, isPlagiarism: isFlagged },
       `[MOCK] AST result: ${similarityPercent}% similarity`,
     );
 
     return {
+      success: true,
+      status: "DONE",
       similarityPercent,
+      isPlagiarism: isFlagged,
+      matchedPairs: isFlagged ? 1 : 0,
       message,
       syntaxError: false,
     };

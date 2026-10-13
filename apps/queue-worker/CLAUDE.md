@@ -22,9 +22,9 @@ Scope for Milestone 3 (Weeks 6-8):
   - Docker container execution via Dockerode. Standalone HTTP service (`http://localhost:5001`).
   - Business outcomes: `TIMEOUT`, `SECURITY_VIOLATION`, `COMPILATION_ERROR`, or `PASSED`/`FAILED` with score.
 - **Nhật (Module 4 - AST Plagiarism Engine)**:
-  - Python FastAPI service (`http://localhost:8001`).
-  - Endpoint: `POST /analyze`. Thresholds: Warning >= 30%, Danger >= 60% (`PLAGIARISM_DETECTED`).
-  - Optional non-blocking step: If AST service is down or code has syntax errors, report `SKIPPED`. Never fail the whole job.
+  - Python FastAPI service (`http://localhost:8000`).
+  - Worker triggers AST check via Gateway internal endpoint `POST /api/internal/submissions/:submissionId/ast-check` (with `x-internal-key`).
+  - Thresholds decided by engine: Warning 30%-60%, Danger > 60% (`PLAGIARISM_DETECTED` / `isPlagiarism: true`). Syntax errors fallback to `lex` (`NEEDS_REVIEW`).
 
 ## Hard Rules when Editing Code
 1. **Never invent endpoints or field names**: All contracts live in `src/contracts/` using Zod schemas and TypeScript types.

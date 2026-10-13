@@ -336,9 +336,13 @@ export async function processSubmission(
       plagiarismMessage = checkpoint.ast.reason;
     } else {
       similarityPercent = checkpoint.ast.similarityPercent;
-      plagiarismStatus =
-        similarityPercent >= AST_SIMILARITY_DANGER_THRESHOLD
-          ? "SUSPICIOUS"
+      const isFlagged =
+        checkpoint.ast.isPlagiarism ??
+        similarityPercent > AST_SIMILARITY_DANGER_THRESHOLD;
+      plagiarismStatus = isFlagged
+        ? "SUSPICIOUS"
+        : checkpoint.ast.status === "NEEDS_REVIEW"
+          ? "NEEDS_REVIEW"
           : "CLEAN";
       plagiarismMessage = checkpoint.ast.message;
     }
@@ -363,18 +367,29 @@ export async function processSubmission(
       );
 
       similarityPercent = astResult.similarityPercent;
+      const isFlagged =
+        astResult.isPlagiarism ??
+        similarityPercent > AST_SIMILARITY_DANGER_THRESHOLD;
 
-      if (astResult.syntaxError) {
+      if (astResult.syntaxError && !astResult.status) {
         plagiarismStatus = "SKIPPED";
         plagiarismMessage = "AST analysis skipped due to syntax errors";
         await saveCheckpoint({ ast: { skipped: true, reason: plagiarismMessage } });
-      } else if (similarityPercent >= AST_SIMILARITY_DANGER_THRESHOLD) {
+      } else if (isFlagged) {
         plagiarismStatus = "SUSPICIOUS";
         plagiarismMessage = astResult.message;
         await saveCheckpoint({ ast: astResult });
         jobLog.warn(
-          { similarityPercent },
+          { similarityPercent, status: astResult.status },
           `⚠️ Plagiarism flagged: ${similarityPercent}% similarity`,
+        );
+      } else if (astResult.status === "NEEDS_REVIEW") {
+        plagiarismStatus = "NEEDS_REVIEW";
+        plagiarismMessage = astResult.message;
+        await saveCheckpoint({ ast: astResult });
+        jobLog.warn(
+          { similarityPercent, status: astResult.status },
+          "AST check completed with warnings (NEEDS_REVIEW)",
         );
       } else {
         plagiarismStatus = "CLEAN";

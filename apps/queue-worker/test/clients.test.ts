@@ -154,4 +154,32 @@ describe("HTTP Clients (Module1 & GenAI)", () => {
       client.review({ submissionId: "sub-1", language: "java" }),
     ).rejects.toThrow(GenAiUnavailableError);
   });
+
+  it("AstClient should post to /api/internal/submissions/:id/ast-check on Gateway", async () => {
+    const { AstClient } = await import("../src/clients/ast.client.js");
+    mockHttp.post.mockResolvedValue({
+      data: {
+        success: true,
+        status: "DONE",
+        similarityPercent: 95.5,
+        isPlagiarism: true,
+        matchedPairs: 1,
+      },
+    });
+
+    const client = new AstClient();
+    const res = await client.analyze({
+      submissionId: "sub-999",
+      assignmentId: "assign-1",
+      language: "java",
+      fileRelativePath: "uploads/sub.zip",
+    });
+
+    expect(mockHttp.post).toHaveBeenCalledWith(
+      "/api/internal/submissions/sub-999/ast-check",
+      expect.objectContaining({ submissionId: "sub-999" }),
+    );
+    expect(res.isPlagiarism).toBe(true);
+    expect(res.similarityPercent).toBe(95.5);
+  });
 });
