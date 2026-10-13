@@ -30,6 +30,18 @@ app.use("/api/dashboard", dashboardRoutes);
 // Hỗ trợ alias chuẩn ADR-001: POST /api/internal/submissions/:id/ast-check
 app.use("/api/internal/submissions", submissionRoutes);
 
+// Root route - thân thiện khi truy cập qua trình duyệt hoặc ngrok
+app.get("/", (req: Request, res: Response) => {
+  res.json({
+    status: "ok",
+    service: "AITA-Intelligent Backend API",
+    version: "1.0.0",
+    docs: "/health",
+    api: "/api",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Endpoint kiểm tra sức khỏe hệ thống (Health Check)
 app.get("/health", (req: Request, res: Response) => {
   res.json({
