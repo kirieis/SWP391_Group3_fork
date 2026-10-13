@@ -48,6 +48,31 @@ interface PlagiarismMatchItem {
   student2?: { studentCode?: string; fullName?: string };
 }
 
+// Kiểu dữ liệu đơn khiếu nại (Appeal) từ backend
+interface AppealItem {
+  id: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'RESOLVED';
+  createdAt: string;
+  submissionId: string;
+  lecturerResponse?: string | null;
+  submission?: {
+    id: string;
+    totalScore?: number | null;
+    assignment?: {
+      title?: string;
+    };
+  };
+  student?: {
+    studentCode?: string;
+    user?: {
+      fullName?: string;
+      email?: string;
+    };
+  };
+  [key: string]: unknown;
+}
+
 // Kiểu dữ liệu analytics từ backend
 interface AnalyticsData {
   stats?: {
@@ -81,8 +106,17 @@ export default function LecturerDashboardPage() {
   const [analyticsError, setAnalyticsError] = useState<string>('');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
 
-  // Số lượng đơn khiếu nại chờ duyệt thật
+  // Số lượng đơn khiếu nại chờ duyệt & danh sách khiếu nại thật
   const [pendingAppealsCount, setPendingAppealsCount] = useState<number>(0);
+  const [appeals, setAppeals] = useState<AppealItem[]>([]);
+  const [appealsLoading, setAppealsLoading] = useState<boolean>(false);
+  const [appealsError, setAppealsError] = useState<string>('');
+  const [resolveModalAppeal, setResolveModalAppeal] = useState<AppealItem | null>(null);
+  const [resolveStatus, setResolveStatus] = useState<'RESOLVED' | 'REJECTED'>('RESOLVED');
+  const [resolveFeedback, setResolveFeedback] = useState<string>('');
+  const [resolveNewScore, setResolveNewScore] = useState<string>('');
+  const [resolving, setResolving] = useState<boolean>(false);
+  const [resolveError, setResolveError] = useState<string>('');
 
   // Modal Tạo Lớp Học Mới
   const [showCreateClassModal, setShowCreateClassModal] = useState<boolean>(false);
@@ -115,10 +149,60 @@ export default function LecturerDashboardPage() {
   // loadClasses, loadPendingAppeals được khai báo bên dưới; useEffect gọi chúng sau khi JSX đã sẵn sàng
 
   const loadPendingAppeals = async () => {
-    // Đếm đơn khiếu nại chờ duyệt - chỉ cần số lượng
-    const res = await apiRequest<{ id: string }[]>('/submissions/appeals/pending');
+    setAppealsLoading(true);
+    setAppealsError('');
+    const res = await apiRequest<AppealItem[]>('/submissions/appeals/pending');
+    setAppealsLoading(false);
     if (res.success && Array.isArray(res.data)) {
+      setAppeals(res.data);
       setPendingAppealsCount(res.data.length);
+    } else {
+      setAppealsError(res.message || 'Không thể tải danh sách khiếu nại.');
+      setAppeals([]);
+    }
+  };
+
+  const handleOpenResolveModal = (appeal: AppealItem, defaultStatus: 'RESOLVED' | 'REJECTED') => {
+    setResolveModalAppeal(appeal);
+    setResolveStatus(defaultStatus);
+    setResolveFeedback('');
+    const currentScore =
+      appeal.submission?.totalScore != null ? (appeal.submission.totalScore / 10).toString() : '';
+    setResolveNewScore(currentScore);
+    setResolveError('');
+  };
+
+  const handleSubmitResolve = async () => {
+    if (!resolveModalAppeal) return;
+    setResolving(true);
+    setResolveError('');
+
+    let parsedScore: number | undefined = undefined;
+    if (resolveNewScore.trim() !== '') {
+      const num = parseFloat(resolveNewScore);
+      if (!isNaN(num)) {
+        parsedScore = Math.round(num * 10);
+      }
+    }
+
+    const res = await apiRequest(`/submissions/appeal/${resolveModalAppeal.id}/resolve`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: resolveStatus,
+        lecturerResponse:
+          resolveFeedback.trim() ||
+          (resolveStatus === 'RESOLVED' ? 'Chấp thuận khiếu nại' : 'Bác bỏ khiếu nại'),
+        ...(parsedScore !== undefined && { newScore: parsedScore }),
+        reasonForScoreChange: resolveFeedback.trim() || 'Điều chỉnh điểm sau phúc khảo',
+      }),
+    });
+
+    setResolving(false);
+    if (res.success) {
+      setResolveModalAppeal(null);
+      loadPendingAppeals();
+    } else {
+      setResolveError(res.message || 'Không thể xử lý khiếu nại. Vui lòng thử lại.');
     }
   };
 
@@ -336,16 +420,20 @@ export default function LecturerDashboardPage() {
 
           <nav className="space-y-1 text-xs font-medium">
             {[
-              { id: 'DASHBOARD', label: 'Bảng tổng quan', icon: TrendingUp },
+              { id: 'DASHBOARD', label: 'Bảng tổng quan', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
               { id: 'CREATE_CLASS', label: 'Tạo lớp học mới', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
               { id: 'CREATE_ASSIGNMENT', label: 'Tạo bài tập mới', icon: PlusCircle, action: () => setShowCreateModal(true) },
               { id: 'IMPORT_STUDENTS', label: 'Nhập sinh viên (Excel)', icon: Upload, action: () => setShowImportModal(true) },
-              { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch },
+              { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
               {
                 id: 'APPEALS',
                 label: 'Hộp thư phúc khảo',
                 icon: MessageSquare,
                 badge: pendingAppealsCount > 0 ? String(pendingAppealsCount) : undefined,
+                action: () => {
+                  setActiveTab('APPEALS');
+                  loadPendingAppeals();
+                },
               },
             ].map((item) => {
               const Icon = item.icon;
@@ -410,48 +498,80 @@ export default function LecturerDashboardPage() {
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md px-6 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
-            <label className="text-xs text-slate-500">Lớp học:</label>
-            {classesLoading ? (
-              <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                <Loader2 size={12} className="animate-spin" /> Đang tải...
-              </span>
-            ) : classes.length > 0 ? (
-              <select
-                value={selectedClassId}
-                onChange={(e) => handleSelectClass(e.target.value)}
-                className="text-xs font-mono bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl font-semibold border border-indigo-200 outline-none"
-              >
-                {classes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.classCode} ({c._count?.students || 0} SV)
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <button
-                onClick={() => setShowCreateClassModal(true)}
-                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
-              >
-                <Plus size={13} /> Tạo lớp học đầu tiên
-              </button>
-            )}
-
-            {/* Dropdown chọn bài tập */}
-            {assignments.length > 0 && (
+            {activeTab === 'DASHBOARD' ? (
               <>
-                <label className="text-xs text-slate-500 ml-2">Bài tập:</label>
-                <select
-                  value={selectedAssignmentId}
-                  onChange={(e) => handleSelectAssignment(e.target.value)}
-                  className="text-xs bg-slate-100 text-slate-800 px-3 py-1.5 rounded-xl font-medium border border-slate-200 outline-none"
-                >
-                  {assignments.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.title}
-                    </option>
-                  ))}
-                </select>
+                <label className="text-xs text-slate-500">Lớp học:</label>
+                {classesLoading ? (
+                  <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                    <Loader2 size={12} className="animate-spin" /> Đang tải...
+                  </span>
+                ) : classes.length > 0 ? (
+                  <select
+                    value={selectedClassId}
+                    onChange={(e) => handleSelectClass(e.target.value)}
+                    className="text-xs font-mono bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl font-semibold border border-indigo-200 outline-none"
+                  >
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.classCode} ({c._count?.students || 0} SV)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <button
+                    onClick={() => setShowCreateClassModal(true)}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                  >
+                    <Plus size={13} /> Tạo lớp học đầu tiên
+                  </button>
+                )}
+
+                {/* Dropdown chọn bài tập */}
+                {assignments.length > 0 && (
+                  <>
+                    <label className="text-xs text-slate-500 ml-2">Bài tập:</label>
+                    <select
+                      value={selectedAssignmentId}
+                      onChange={(e) => handleSelectAssignment(e.target.value)}
+                      className="text-xs bg-slate-100 text-slate-800 px-3 py-1.5 rounded-xl font-medium border border-slate-200 outline-none"
+                    >
+                      {assignments.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.title}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </>
+            ) : activeTab === 'APPEALS' ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('DASHBOARD')}
+                  className="text-xs text-slate-500 hover:text-slate-800 font-medium transition"
+                >
+                  Bảng tổng quan
+                </button>
+                <span className="text-xs text-slate-300">/</span>
+                <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+                  <MessageSquare size={14} className="text-indigo-600" />
+                  <span>Hộp thư phúc khảo</span>
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('DASHBOARD')}
+                  className="text-xs text-slate-500 hover:text-slate-800 font-medium transition"
+                >
+                  Bảng tổng quan
+                </button>
+                <span className="text-xs text-slate-300">/</span>
+                <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
+                  <GitBranch size={14} className="text-indigo-600" />
+                  <span>Git Teamwork Analytics</span>
+                </span>
+              </div>
             )}
           </div>
 
@@ -467,7 +587,9 @@ export default function LecturerDashboardPage() {
         </header>
 
         <div className="p-6 space-y-6 max-w-6xl w-full mx-auto">
-          {/* TRƯỜNG HỢP 1: Lỗi tải danh sách lớp */}
+          {activeTab === 'DASHBOARD' && (
+            <>
+              {/* TRƯỜNG HỢP 1: Lỗi tải danh sách lớp */}
           {classesError && (
             <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
               <AlertCircle size={24} className="text-rose-600" />
@@ -679,8 +801,177 @@ export default function LecturerDashboardPage() {
               </div>
             </>
           )}
+        </>
+      )}
+
+      {/* TAB 2: HỘP THƯ PHÚC KHẢO (APPEALS) */}
+      {activeTab === 'APPEALS' && (
+        <div className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <MessageSquare size={18} className="text-indigo-600" />
+                  <span>Hộp thư Phúc khảo &amp; Khiếu nại</span>
+                  {pendingAppealsCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold border border-rose-200">
+                      {pendingAppealsCount} đơn chờ duyệt
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Xem xét và giải quyết các khiếu nại về điểm số hoặc giải trình nghi vấn đạo văn của sinh viên
+                </p>
+              </div>
+              <button
+                onClick={loadPendingAppeals}
+                disabled={appealsLoading}
+                className="self-start sm:self-auto text-xs px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 transition"
+              >
+                {appealsLoading ? <Loader2 size={13} className="animate-spin" /> : null}
+                <span>Làm mới danh sách</span>
+              </button>
+            </div>
+
+            {/* Trạng thái tải */}
+            {appealsLoading && (
+              <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                <Loader2 size={24} className="animate-spin text-indigo-600" />
+                <span>Đang tải danh sách khiếu nại từ hệ thống...</span>
+              </div>
+            )}
+
+            {/* Trạng thái lỗi */}
+            {!appealsLoading && appealsError && (
+              <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
+                <AlertCircle size={28} className="text-rose-600" />
+                <p className="text-xs text-rose-700 font-medium">{appealsError}</p>
+                <button
+                  onClick={loadPendingAppeals}
+                  className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700 font-medium"
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
+
+            {/* Trạng thái rỗng: không có đơn nào */}
+            {!appealsLoading && !appealsError && appeals.length === 0 && (
+              <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <CheckCircle2 size={26} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-800">Hộp thư phúc khảo trống</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">Hiện tại không có sinh viên nào gửi đơn khiếu nại cần xử lý.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Danh sách các đơn khiếu nại */}
+            {!appealsLoading && !appealsError && appeals.length > 0 && (
+              <div className="divide-y divide-slate-100 mt-2">
+                {appeals.map((appeal) => {
+                  const studentName = appeal.student?.user?.fullName || 'Sinh viên';
+                  const studentCode = appeal.student?.studentCode || 'N/A';
+                  const studentEmail = appeal.student?.user?.email || '';
+                  const assignmentTitle = appeal.submission?.assignment?.title || 'Bài tập';
+                  const currentScore =
+                    appeal.submission?.totalScore != null
+                      ? (appeal.submission.totalScore / 10).toFixed(1)
+                      : 'Chưa có';
+                  const dateStr = appeal.createdAt
+                    ? new Date(appeal.createdAt).toLocaleString('vi-VN')
+                    : '';
+
+                  return (
+                    <div key={appeal.id} className="py-4 hover:bg-slate-50/50 rounded-xl px-2 transition">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-xs text-slate-900">{studentName}</span>
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                              {studentCode}
+                            </span>
+                            {studentEmail && (
+                              <span className="text-[11px] text-slate-400">({studentEmail})</span>
+                            )}
+                            <span className="text-[10px] text-slate-400">• {dateStr}</span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-slate-600">
+                            <span>Bài tập: <strong className="text-slate-800">{assignmentTitle}</strong></span>
+                            <span>•</span>
+                            <span>Điểm hiện tại: <strong className="text-indigo-600">{currentScore}</strong></span>
+                          </div>
+
+                          <div className="mt-2 p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl text-xs text-amber-950">
+                            <p className="font-semibold text-[11px] text-amber-800 mb-1 flex items-center gap-1">
+                              <MessageSquare size={12} /> Lý do khiếu nại của sinh viên:
+                            </p>
+                            <p className="whitespace-pre-wrap leading-relaxed">{appeal.reason}</p>
+                          </div>
+                        </div>
+
+                        {/* Hành động */}
+                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center mt-2 md:mt-0">
+                          <button
+                            onClick={() => navigate(`/submissions/${appeal.submissionId}/results`)}
+                            className="px-3 py-1.5 text-xs rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium flex items-center gap-1 transition"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Xem bài nộp</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenResolveModal(appeal, 'RESOLVED')}
+                            className="px-3 py-1.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1 transition shadow-sm"
+                          >
+                            <CheckCircle2 size={13} />
+                            <span>Duyệt &amp; Sửa điểm</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenResolveModal(appeal, 'REJECTED')}
+                            className="px-2.5 py-1.5 text-xs rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-600 font-semibold flex items-center gap-1 transition"
+                          >
+                            <X size={13} />
+                            <span>Bác bỏ</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      </main>
+      )}
+
+      {/* TAB 3: GIT TEAMWORK ANALYTICS */}
+      {activeTab === 'GIT_ANALYTICS' && (
+        <div className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                <GitBranch size={20} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Git Teamwork Analytics</h2>
+                <p className="text-xs text-slate-500">Phân tích mức độ đóng góp mã nguồn và phối hợp làm việc nhóm qua Git</p>
+              </div>
+            </div>
+            <div className="p-12 text-center text-xs text-slate-500 space-y-2">
+              <GitBranch size={32} className="mx-auto text-slate-400" />
+              <p className="font-semibold text-slate-700">Dữ liệu phân tích Git đang được xử lý</p>
+              <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                Hệ thống đang tích hợp với webhook Git repository của lớp học để đo lường số commit, tần suất code và mức độ đóng góp của từng thành viên.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  </main>
 
       {/* Modal Tạo Lớp Học Mới */}
       {showCreateClassModal && (
@@ -950,6 +1241,110 @@ export default function LecturerDashboardPage() {
               >
                 {creatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
                 <span>{creatingAssignment ? 'Đang tạo...' : 'Tạo đề bài'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Duyệt & Xử lý Khiếu nại (Appeal Resolution Modal) */}
+      {resolveModalAppeal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                {resolveStatus === 'RESOLVED' ? (
+                  <>
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <span>Chấp thuận phúc khảo &amp; Sửa điểm</span>
+                  </>
+                ) : (
+                  <>
+                    <X size={16} className="text-rose-600" />
+                    <span>Bác bỏ khiếu nại</span>
+                  </>
+                )}
+              </h3>
+              <button
+                onClick={() => setResolveModalAppeal(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60">
+              <p>Sinh viên: <strong className="text-slate-800">{resolveModalAppeal.student?.user?.fullName || 'Sinh viên'}</strong> ({resolveModalAppeal.student?.studentCode || 'N/A'})</p>
+              <p>Bài tập: <strong className="text-slate-800">{resolveModalAppeal.submission?.assignment?.title || 'Bài tập'}</strong></p>
+              <p>Điểm hiện tại: <strong className="text-indigo-600">{resolveModalAppeal.submission?.totalScore != null ? (resolveModalAppeal.submission.totalScore / 10).toFixed(1) : 'Chưa có'}</strong></p>
+              <div className="pt-1.5 border-t border-slate-200/60">
+                <span className="text-slate-500 font-medium block mb-0.5">Lý do khiếu nại:</span>
+                <p className="text-[11px] text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200/60 italic leading-relaxed">
+                  &quot;{resolveModalAppeal.reason}&quot;
+                </p>
+              </div>
+            </div>
+
+            {resolveError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>{resolveError}</span>
+              </div>
+            )}
+
+            {resolveStatus === 'RESOLVED' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Điểm mới sau phúc khảo (thang điểm 10):
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="10"
+                  value={resolveNewScore}
+                  onChange={(e) => setResolveNewScore(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 focus:bg-white"
+                  placeholder="Ví dụ: 8.5"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Hệ thống sẽ tự động ghi vết thay đổi điểm vào Score Audit Log theo quy định R03.</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Phản hồi của giảng viên gửi cho sinh viên:
+              </label>
+              <textarea
+                rows={3}
+                value={resolveFeedback}
+                onChange={(e) => setResolveFeedback(e.target.value)}
+                placeholder={resolveStatus === 'RESOLVED' ? "Nhập nhận xét / lý do điều chỉnh điểm..." : "Nhập lý do bác bỏ khiếu nại..."}
+                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setResolveModalAppeal(null)}
+                disabled={resolving}
+                className="px-3.5 py-2 text-xs rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-medium"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitResolve}
+                disabled={resolving}
+                className={`px-4 py-2 text-xs rounded-xl text-white font-semibold flex items-center gap-1.5 shadow-sm transition ${
+                  resolveStatus === 'RESOLVED'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                {resolving ? <Loader2 size={13} className="animate-spin" /> : null}
+                <span>{resolveStatus === 'RESOLVED' ? 'Xác nhận cập nhật' : 'Xác nhận bác bỏ'}</span>
               </button>
             </div>
           </div>
