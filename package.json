@@ -10,6 +10,11 @@
         "test": "npm run test --workspace=@aita/queue-worker",
         "test:worker": "npm run test --workspace=@aita/queue-worker",
         "test:coverage": "npm run test:coverage --workspace=@aita/queue-worker",
-        "build": "npm run build --workspace=@aita/queue-worker"
+        "build": "npm run build --workspace=@aita/queue-worker",
+        "attack-test": "npm run --workspace=@aita/sandbox-engine attack-test",
+        "sandbox:dev": "npm run --workspace=@aita/sandbox-engine dev",
+        "sandbox:build": "npm run --workspace=@aita/sandbox-engine build",
+        "sandbox:test": "npm run --workspace=@aita/sandbox-engine test",
+        "docker:build:java17": "npm run --workspace=@aita/sandbox-engine docker:build:java17"
     }
 }

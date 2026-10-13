@@ -1,6 +1,41 @@
 {
   "name": "@aita/sandbox-engine",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
-  "description": "Docker Sandbox Engine placeholder (Owner: Thien)"
+  "description": "AITA-INTELLIGENT Subsystem 2: Docker Autograding Sandbox",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "cli": "tsx src/cli.ts",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "attack-test": "tsx tests/attacks/run-attacks.ts",
+    "docker:build:java17": "docker build -t aita-sandbox-java17:17.0.10 -t aita-sandbox-java17:latest docker/java17"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "dockerode": "^4.0.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "pino": "^9.4.0",
+    "tar-stream": "^3.1.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.5",
+    "@types/dockerode": "^3.3.31",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.13",
+    "@types/node": "^20.16.5",
+    "@types/supertest": "^6.0.2",
+    "@types/tar-stream": "^3.1.3",
+    "jest": "^29.7.0",
+    "pino-pretty": "^11.2.2",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
 }
