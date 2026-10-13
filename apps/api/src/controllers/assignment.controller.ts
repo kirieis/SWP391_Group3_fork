@@ -129,3 +129,49 @@ export const getAssignmentDetail = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy chi tiết bài tập." });
     }
 };
+
+// 4. Lấy danh sách bài tập theo lớp (hoặc tất cả bài tập sinh viên/giảng viên được xem)
+export const getAssignments = async (req: Request, res: Response) => {
+    try {
+        const { classId } = req.query;
+        const user = req.user;
+
+        let whereClause: any = {};
+        if (classId) {
+            whereClause.classId = String(classId);
+        } else if (user?.role === "STUDENT") {
+            // Lấy các bài tập thuộc các lớp sinh viên đang theo học
+            const enrollments = await prisma.classStudent.findMany({
+                where: { studentId: user.userId, status: "ACTIVE" },
+                select: { classId: true },
+            });
+            whereClause.classId = { in: enrollments.map((e) => e.classId) };
+        } else if (user?.role === "LECTURER") {
+            const classes = await prisma.class.findMany({
+                where: { lecturerId: user.userId },
+                select: { id: true },
+            });
+            whereClause.classId = { in: classes.map((c) => c.id) };
+        }
+
+        const assignments = await prisma.assignment.findMany({
+            where: whereClause,
+            include: {
+                class: { select: { classCode: true } },
+                _count: { select: { submissions: true } },
+                submissions: user?.role === "STUDENT" ? {
+                    where: { studentId: user.userId },
+                    orderBy: { submittedAt: "desc" },
+                    take: 1,
+                    select: { id: true, status: true, totalScore: true, astCheckStatus: true },
+                } : false,
+            },
+            orderBy: { deadline: "asc" },
+        });
+
+        return res.json({ success: true, data: assignments });
+    } catch (error) {
+        console.error("Lỗi getAssignments:", error);
+        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy danh sách bài tập." });
+    }
+};
