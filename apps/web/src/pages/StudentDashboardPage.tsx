@@ -13,113 +13,240 @@ import {
   AlertCircle,
   Loader2,
   X,
+  RotateCw,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
-interface AssignmentItem {
+export interface AssignmentItem {
   id: string;
   title: string;
   classCode: string;
   language: string;
   deadline: string;
-  status: 'NOT_SUBMITTED' | 'PENDING' | 'DONE' | 'SCORE_WITHHELD' | 'FAILED' | 'GRADED';
-  score?: number;
+  rawDeadline: string;
+  status: 'NOT_SUBMITTED' | 'PENDING' | 'RUNNING' | 'COMPLETED' | 'SCORE_WITHHELD' | 'FAILED' | 'GRADED' | string;
+  score?: number | null;
   latestSubmissionId?: string;
-  astCheckStatus?: string;
+  astCheckStatus?: 'PENDING' | 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | string;
+}
+
+// Hàm xác định nhãn, màu sắc và logic hiển thị trạng thái chuẩn SRS và Prisma schema
+function getAssignmentStatusInfo(item: AssignmentItem): {
+  badgeClass: string;
+  label: string;
+  showScore: boolean;
+  isChecking: boolean;
+} {
+  if (item.status === 'NOT_SUBMITTED') {
+    return {
+      badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+      label: 'Chưa nộp',
+      showScore: false,
+      isChecking: false,
+    };
+  }
+
+  // Quy tắc ADR-001 & SRS: SCORE_WITHHELD tuyệt đối không hiển thị điểm số
+  if (item.status === 'SCORE_WITHHELD') {
+    return {
+      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+      label: 'Đang chờ giảng viên xem xét',
+      showScore: false,
+      isChecking: false,
+    };
+  }
+
+  // Cần xem xét do lỗi cú pháp nhưng đã fallback phân tích Lexical
+  if (item.astCheckStatus === 'NEEDS_REVIEW') {
+    return {
+      badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
+      label: 'Cần xem xét (Phân tích Lexical)',
+      showScore: item.score !== undefined && item.score !== null,
+      isChecking: false,
+    };
+  }
+
+  // Thất bại trong pipeline chấm hoặc AST
+  if (item.status === 'FAILED' || item.astCheckStatus === 'FAILED') {
+    return {
+      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
+      label: 'Lỗi kiểm tra cú pháp',
+      showScore: false,
+      isChecking: false,
+    };
+  }
+
+  // Đang trong hàng đợi hoặc đang kiểm tra AST / Sandbox
+  if (item.status === 'PENDING' || item.status === 'RUNNING' || item.astCheckStatus === 'PENDING') {
+    return {
+      badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
+      label: 'Đang kiểm tra...',
+      showScore: false,
+      isChecking: true,
+    };
+  }
+
+  // Đã có điểm chính thức
+  if (item.score !== undefined && item.score !== null) {
+    return {
+      badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+      label: 'Đã có điểm',
+      showScore: true,
+      isChecking: false,
+    };
+  }
+
+  // Trạng thái trung tính khác (đảm bảo không làm vỡ giao diện)
+  return {
+    badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+    label: item.status || 'Đã nộp bài',
+    showScore: false,
+    isChecking: false,
+  };
+}
+
+interface RawAssignment {
+  id: string;
+  title: string;
+  language?: string;
+  deadline?: string;
+  class?: { classCode?: string };
+  submissions?: Array<{
+    id: string;
+    status: string;
+    totalScore?: number | null;
+    astCheckStatus?: string;
+  }>;
 }
 
 export default function StudentDashboardPage() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<{ fullName?: string; email?: string } | null>(null);
+  const [user] = useState<{ fullName?: string; email?: string } | null>(() => {
+    try {
+      const rawUser = localStorage.getItem('aita_user');
+      return rawUser ? JSON.parse(rawUser) : null;
+    } catch {
+      return null;
+    }
+  });
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
+
+  // Polling quản lý tiến trình chấm bài
+  const [isPolling, setIsPolling] = useState(false);
+  const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingCountRef = useRef(0);
 
   // Modal nộp bài
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentItem | null>(null);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Tải thông tin người dùng từ LocalStorage
-  useEffect(() => {
-    const rawUser = localStorage.getItem('aita_user');
-    if (rawUser) {
-      try {
-        setUser(JSON.parse(rawUser));
-      } catch {
-        setUser(null);
-      }
+  const stopPolling = () => {
+    if (pollingTimerRef.current) {
+      clearInterval(pollingTimerRef.current);
+      pollingTimerRef.current = null;
     }
-    loadAssignments();
-  }, []);
+    setIsPolling(false);
+    pollingCountRef.current = 0;
+  };
 
-  // 2. Tải danh sách bài tập từ Backend
-  const loadAssignments = async () => {
-    setLoading(true);
-    const res = await apiRequest<any[]>('/assignments');
-    if (res.success && res.data && res.data.length > 0) {
-      const mapped = res.data.map((item) => {
+  // 1. Tải danh sách bài tập thật từ Backend API
+  const loadAssignments = async (showInitialLoader = false) => {
+    if (showInitialLoader) {
+      setLoading(true);
+    }
+    setErrorMessage('');
+
+    const res = await apiRequest<RawAssignment[]>('/assignments');
+    if (showInitialLoader) {
+      setLoading(false);
+    }
+
+    if (res.success && Array.isArray(res.data)) {
+      const mapped: AssignmentItem[] = res.data.map((item) => {
         const latestSub = item.submissions?.[0];
         let status: AssignmentItem['status'] = 'NOT_SUBMITTED';
-        let score = undefined;
+        let score: number | null = null;
         let latestSubmissionId = undefined;
+        let astCheckStatus = undefined;
 
         if (latestSub) {
           latestSubmissionId = latestSub.id;
-          score = latestSub.totalScore;
-          if (latestSub.status === 'SCORE_WITHHELD') {
-            status = 'SCORE_WITHHELD';
-          } else if (latestSub.astCheckStatus === 'DONE' && latestSub.totalScore !== null && latestSub.totalScore !== undefined) {
-            status = 'GRADED';
-          } else if (latestSub.astCheckStatus === 'FAILED') {
-            status = 'FAILED';
-          } else {
-            status = 'PENDING';
-          }
+          status = latestSub.status;
+          score = latestSub.totalScore ?? null;
+          astCheckStatus = latestSub.astCheckStatus;
         }
 
         return {
           id: item.id,
           title: item.title,
-          classCode: item.class?.classCode || 'LỚP CHUNG',
+          classCode: item.class?.classCode || 'CHƯA PHÂN LỚP',
           language: item.language || 'Java',
-          deadline: new Date(item.deadline).toLocaleString('vi-VN'),
+          rawDeadline: item.deadline || '',
+          deadline: item.deadline ? new Date(item.deadline).toLocaleString('vi-VN') : 'Không giới hạn',
           status,
           score,
           latestSubmissionId,
-          astCheckStatus: latestSub?.astCheckStatus,
+          astCheckStatus,
         };
       });
+
       setAssignments(mapped);
+
+      // Kiểm tra xem có bài nộp nào còn PENDING không để duy trì polling
+      const hasPending = mapped.some(
+        (a) => a.astCheckStatus === 'PENDING' || a.status === 'PENDING' || a.status === 'RUNNING'
+      );
+      if (hasPending && !isPolling) {
+        startPolling();
+      } else if (!hasPending && isPolling) {
+        stopPolling();
+      }
     } else {
-      // Fallback mockup nếu chưa có bài tập nào trong CSDL để người dùng vẫn thấy giao diện
-      setAssignments([
-        {
-          id: 'asg-01',
-          title: 'Assignment 1: Java OOP Car Rental Management',
-          classCode: 'SE1801-SWP391',
-          language: 'Java',
-          deadline: '2026-09-20 23:59',
-          status: 'GRADED',
-          score: 85,
-        },
-        {
-          id: 'asg-02',
-          title: 'Assignment 2: Binary Search Tree & Graph Traversal',
-          classCode: 'SE1801-SWP391',
-          language: 'Java',
-          deadline: '2026-09-25 23:59',
-          status: 'PENDING',
-        },
-      ]);
+      // Khi API lỗi -> Chuyển sang trạng thái Error rõ ràng (KHÔNG DÙNG FAKE DATA)
+      setErrorMessage(res.message || 'Không thể tải danh sách bài tập từ máy chủ.');
+      stopPolling();
     }
-    setLoading(false);
   };
 
-  // 3. Xử lý nộp bài tập (.zip)
+  // Quản lý polling với giới hạn thời gian (tối đa 20 lần = ~60 giây)
+  const startPolling = () => {
+    if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
+    setIsPolling(true);
+    pollingCountRef.current = 0;
+
+    pollingTimerRef.current = setInterval(() => {
+      pollingCountRef.current += 1;
+      if (pollingCountRef.current > 20) {
+        stopPolling();
+        return;
+      }
+      loadAssignments(false);
+    }, 3000);
+  };
+
+  useEffect(() => {
+    // Tải danh sách bài tập khi component mount - đây là side-effect chuẩn của useEffect
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAssignments(true);
+
+    return () => {
+      // Dừng polling khi người dùng rời trang
+      if (pollingTimerRef.current) {
+        clearInterval(pollingTimerRef.current);
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 3. Xử lý nộp bài tập (.zip) thật
   const handleSubmitAssignment = async () => {
     if (!selectedAssignment || !fileToUpload) {
       setUploadError('Vui lòng chọn file .zip bài nộp.');
@@ -132,7 +259,7 @@ export default function StudentDashboardPage() {
     }
 
     if (fileToUpload.size > 10 * 1024 * 1024) {
-      setUploadError('Dung lượng file vượt quá giới hạn cho phép (10MB).');
+      setUploadError('Dung lượng file vượt quá giới hạn cho phép (tối đa 10MB).');
       return;
     }
 
@@ -143,7 +270,7 @@ export default function StudentDashboardPage() {
     formData.append('assignmentId', selectedAssignment.id);
     formData.append('file', fileToUpload);
 
-    const res = await apiRequest<{ submissionId: string }>('/submissions', {
+    const res = await apiRequest<{ submissionId: string; attemptsLeft: number }>('/submissions', {
       method: 'POST',
       body: formData,
     });
@@ -151,24 +278,34 @@ export default function StudentDashboardPage() {
     setSubmitting(false);
 
     if (res.success && res.data?.submissionId) {
-      setSelectedAssignment(null);
-      setFileToUpload(null);
-      // Chuyển hướng ngay sang màn hình kết quả thời gian thực
-      navigate(`/submissions/${res.data.submissionId}/results`);
+      setUploadSuccessMessage(res.message || 'Nộp bài thành công! Đang tiến hành chấm tự động.');
+      setTimeout(() => {
+        setSelectedAssignment(null);
+        setFileToUpload(null);
+        setUploadSuccessMessage('');
+        loadAssignments(false);
+        startPolling();
+      }, 1000);
     } else {
+      // Hiển thị chính xác thông báo lỗi từ backend (ví dụ: đã quá hạn nộp, quá số lần nộp cho phép Risk R01)
       setUploadError(res.message || 'Nộp bài thất bại. Vui lòng thử lại.');
     }
   };
 
+  // Lọc và tìm kiếm bài tập trên dữ liệu thật
   const filteredAssignments = assignments.filter((item) => {
+    const statusInfo = getAssignmentStatusInfo(item);
     const matchStatus =
       filterStatus === 'ALL' ||
       (filterStatus === 'NOT_SUBMITTED' && item.status === 'NOT_SUBMITTED') ||
-      (filterStatus === 'PENDING' && (item.status === 'PENDING' || item.status === 'SCORE_WITHHELD')) ||
-      (filterStatus === 'GRADED' && item.status === 'GRADED');
+      (filterStatus === 'PENDING' && statusInfo.isChecking) ||
+      (filterStatus === 'GRADED' && statusInfo.showScore) ||
+      (filterStatus === 'SCORE_WITHHELD' && item.status === 'SCORE_WITHHELD');
+
     const matchSearch =
       item.title.toLowerCase().includes(searchKeyword.toLowerCase()) ||
       item.classCode.toLowerCase().includes(searchKeyword.toLowerCase());
+
     return matchStatus && matchSearch;
   });
 
@@ -194,13 +331,14 @@ export default function StudentDashboardPage() {
           <div className="w-9 h-9 rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center text-xs shadow-sm">
             {user?.fullName?.charAt(0) || 'SV'}
           </div>
+          {/* Nút Đăng xuất chuẩn */}
           <button
             onClick={() => {
               localStorage.removeItem('aita_token');
               localStorage.removeItem('aita_user');
-              navigate('/login');
+              navigate('/login', { replace: true });
             }}
-            className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition"
+            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition"
             title="Đăng xuất"
           >
             <LogOut size={16} />
@@ -239,8 +377,13 @@ export default function StudentDashboardPage() {
               <Clock size={24} />
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-500">Trạng thái hệ thống</p>
-              <p className="text-sm font-bold text-amber-600 mt-1">Sẵn sàng chấm tự động</p>
+              <p className="text-xs font-medium text-slate-500">Trạng thái chấm bài</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                {isPolling && <RotateCw size={12} className="animate-spin text-amber-600" />}
+                <p className="text-sm font-bold text-amber-600">
+                  {isPolling ? 'Đang cập nhật tiến trình...' : 'Sẵn sàng chấm tự động'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -262,8 +405,9 @@ export default function StudentDashboardPage() {
             {[
               { id: 'ALL', label: 'Tất cả' },
               { id: 'NOT_SUBMITTED', label: 'Chưa nộp' },
-              { id: 'PENDING', label: 'Đang chấm / Chờ duyệt' },
+              { id: 'PENDING', label: 'Đang kiểm tra' },
               { id: 'GRADED', label: 'Đã có điểm' },
+              { id: 'SCORE_WITHHELD', label: 'Chờ xem xét' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -280,103 +424,129 @@ export default function StudentDashboardPage() {
           </div>
         </div>
 
-        {/* Assignment Cards List */}
-        {loading ? (
-          <div className="p-12 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
-            <Loader2 size={16} className="animate-spin text-indigo-600" />
+        {/* TRẠNG THÁI 1: Đang tải dữ liệu (Loading state) */}
+        {loading && (
+          <div className="p-16 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <Loader2 size={24} className="animate-spin text-indigo-600" />
             <span>Đang tải danh sách bài tập từ máy chủ...</span>
           </div>
-        ) : (
+        )}
+
+        {/* TRẠNG THÁI 2: Lỗi kết nối / Máy chủ (Error state với nút Thử lại) */}
+        {!loading && errorMessage && (
+          <div className="p-12 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-3">
+            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
+              <AlertCircle size={28} />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900">Không thể tải danh sách bài tập</h3>
+            <p className="text-xs text-slate-500 max-w-md">{errorMessage}</p>
+            <button
+              onClick={() => loadAssignments(true)}
+              className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-xl transition shadow-sm"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+
+        {/* TRẠNG THÁI 3: Danh sách rỗng thật (Empty state) */}
+        {!loading && !errorMessage && assignments.length === 0 && (
+          <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+              <BookOpen size={28} />
+            </div>
+            <h3 className="text-sm font-bold text-slate-900">Bạn chưa có bài tập nào</h3>
+            <p className="text-xs text-slate-500 max-w-sm">
+              Hiện tại bạn chưa được ghi danh vào bài tập nào hoặc giảng viên chưa mở đề bài cho lớp của bạn.
+            </p>
+          </div>
+        )}
+
+        {/* TRẠNG THÁI 4: Hiển thị danh sách bài tập thật */}
+        {!loading && !errorMessage && assignments.length > 0 && (
           <div className="space-y-4">
-            {filteredAssignments.map((assignment) => (
-              <div
-                key={assignment.id}
-                className="bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-md transition rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 group shadow-sm"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[11px] font-semibold">
-                      {assignment.classCode}
-                    </span>
-                    <span className="flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                      <FileCode size={12} />
-                      {assignment.language}
-                    </span>
-                  </div>
-                  <h3 className="font-semibold text-slate-900 text-base group-hover:text-indigo-600 transition">
-                    {assignment.title}
-                  </h3>
-                  <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <Clock size={14} className="text-slate-400" />
-                    Hạn nộp: <span className="text-slate-700 font-medium">{assignment.deadline}</span>
-                  </p>
-                </div>
-
-                {/* Status & Actions */}
-                <div className="flex items-center gap-4 self-end md:self-center">
-                  {assignment.status === 'GRADED' && (
-                    <div className="text-right">
-                      <span className="text-xs text-slate-500 block">Kết quả</span>
-                      <span className="text-xl font-bold text-emerald-600">
-                        {assignment.score}
-                        <span className="text-xs text-slate-400 font-normal"> / 100</span>
-                      </span>
-                    </div>
-                  )}
-
-                  {assignment.status === 'PENDING' && (
-                    <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 text-xs rounded-full font-medium">
-                      Đang phân tích AST...
-                    </span>
-                  )}
-
-                  {assignment.status === 'SCORE_WITHHELD' && (
-                    <span className="px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 text-xs rounded-full font-medium">
-                      Tạm giữ điểm (Nghi ngờ đạo văn)
-                    </span>
-                  )}
-
-                  {assignment.status === 'FAILED' && (
-                    <span className="px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 text-xs rounded-full font-medium">
-                      Lỗi kiểm tra cú pháp
-                    </span>
-                  )}
-
-                  {assignment.status === 'NOT_SUBMITTED' && (
-                    <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs rounded-full font-medium">
-                      Chưa nộp
-                    </span>
-                  )}
-
-                  <div className="flex items-center gap-2">
-                    {/* Nút Nộp bài thật */}
-                    <button
-                      onClick={() => {
-                        setSelectedAssignment(assignment);
-                        setFileToUpload(null);
-                        setUploadError('');
-                      }}
-                      className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20"
-                    >
-                      <UploadCloud size={14} />
-                      <span>{assignment.latestSubmissionId ? 'Nộp lại bài' : 'Nộp bài (.zip)'}</span>
-                    </button>
-
-                    {/* Nút Xem kết quả */}
-                    {assignment.latestSubmissionId && (
-                      <button
-                        onClick={() => navigate(`/submissions/${assignment.latestSubmissionId}/results`)}
-                        className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs px-3 py-2.5 rounded-xl transition"
-                        title="Xem kết quả chi tiết"
-                      >
-                        <span>Chi tiết</span>
-                        <ArrowRight size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
+            {filteredAssignments.length === 0 ? (
+              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400">
+                Không tìm thấy bài tập nào phù hợp với bộ lọc hiện tại.
               </div>
-            ))}
+            ) : (
+              filteredAssignments.map((assignment) => {
+                const statusInfo = getAssignmentStatusInfo(assignment);
+
+                return (
+                  <div
+                    key={assignment.id}
+                    className="bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-md transition rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 group shadow-sm"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[11px] font-semibold">
+                          {assignment.classCode}
+                        </span>
+                        <span className="flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                          <FileCode size={12} />
+                          {assignment.language}
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-slate-900 text-base group-hover:text-indigo-600 transition">
+                        {assignment.title}
+                      </h3>
+                      <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                        <Clock size={14} className="text-slate-400" />
+                        Hạn nộp: <span className="text-slate-700 font-medium">{assignment.deadline}</span>
+                      </p>
+                    </div>
+
+                    {/* Trạng thái & Thao tác */}
+                    <div className="flex items-center gap-4 self-end md:self-center">
+                      {/* Hiển thị điểm số thật (nếu có và không bị SCORE_WITHHELD) */}
+                      {statusInfo.showScore && (
+                        <div className="text-right">
+                          <span className="text-xs text-slate-500 block">Kết quả</span>
+                          <span className="text-xl font-bold text-emerald-600">
+                            {assignment.score}
+                            <span className="text-xs text-slate-400 font-normal"> / 100</span>
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Badge trạng thái */}
+                      <span className={`px-3 py-1 text-xs rounded-full font-medium ${statusInfo.badgeClass}`}>
+                        {statusInfo.label}
+                      </span>
+
+                      {/* Các nút hành động */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedAssignment(assignment);
+                            setFileToUpload(null);
+                            setUploadError('');
+                            setUploadSuccessMessage('');
+                          }}
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20"
+                        >
+                          <UploadCloud size={14} />
+                          <span>{assignment.latestSubmissionId ? 'Nộp lại bài' : 'Nộp bài (.zip)'}</span>
+                        </button>
+
+                        {/* Xem kết quả bài nộp chi tiết */}
+                        {assignment.latestSubmissionId && (
+                          <button
+                            onClick={() => navigate(`/submissions/${assignment.latestSubmissionId}/results`)}
+                            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs px-3 py-2.5 rounded-xl transition"
+                            title="Xem kết quả chi tiết"
+                          >
+                            <span>Chi tiết</span>
+                            <ArrowRight size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </main>
@@ -436,46 +606,45 @@ export default function StudentDashboardPage() {
                       Nhấn vào đây để chọn file bài nộp <span className="text-indigo-600">.zip</span>
                     </p>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Giới hạn dung lượng tối đa: 10MB • Nén toàn bộ file mã nguồn Java
+                      Chỉ chấp nhận .zip • Tối đa 10MB • Tối đa 5 lần nộp (Risk R01)
                     </p>
                   </div>
                 )}
               </div>
             </div>
 
+            {/* Thông báo lỗi nếu có */}
             {uploadError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
-                <AlertCircle size={14} className="shrink-0" />
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs">
+                <AlertCircle size={15} className="shrink-0" />
                 <span>{uploadError}</span>
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            {/* Thông báo nộp thành công */}
+            {uploadSuccessMessage && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700 text-xs">
+                <CheckCircle size={15} className="shrink-0" />
+                <span>{uploadSuccessMessage}</span>
+              </div>
+            )}
+
+            {/* Footer Modal */}
+            <div className="flex justify-end gap-3 pt-2">
               <button
-                type="button"
                 disabled={submitting}
                 onClick={() => setSelectedAssignment(null)}
-                className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100 transition"
+                className="px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-100 rounded-xl transition"
               >
                 Hủy
               </button>
               <button
-                type="button"
                 disabled={submitting || !fileToUpload}
                 onClick={handleSubmitAssignment}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20"
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5 disabled:opacity-50"
               >
-                {submitting ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    <span>Đang tải lên & tiếp nhận...</span>
-                  </>
-                ) : (
-                  <>
-                    <UploadCloud size={14} />
-                    <span>Xác nhận Nộp bài</span>
-                  </>
-                )}
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+                <span>{submitting ? 'Đang tải lên...' : 'Xác nhận nộp bài'}</span>
               </button>
             </div>
           </div>

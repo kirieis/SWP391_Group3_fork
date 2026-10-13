@@ -1,11 +1,24 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
 import { GraduationCap, School, ShieldAlert, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
+import { isTokenExpired } from '../utils/auth';
+
+// Kiểu trả về từ API đăng nhập
+interface AuthResponseData {
+  token: string;
+  user: {
+    id: string;
+    email: string;
+    fullName: string;
+    role: 'STUDENT' | 'LECTURER' | 'ADMIN';
+    [key: string]: unknown;
+  };
+}
 
 // ---------------------------------------------------------------------------
-// Kiểm tra Google Client ID đã được cấu hình thật chưa
+// Biến môi trường và cờ kiểm tra Dev Mode
 // ---------------------------------------------------------------------------
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const IS_PLACEHOLDER =
@@ -13,16 +26,21 @@ const IS_PLACEHOLDER =
   GOOGLE_CLIENT_ID === 'placeholder' ||
   GOOGLE_CLIENT_ID.startsWith('your_google_client_id');
 
+// Dev Mode chỉ được kích hoạt khi CẢ HAI điều kiện thỏa mãn:
+// 1. import.meta.env.DEV === true (chỉ trong môi trường development, không phải production build)
+// 2. VITE_ENABLE_DEV_LOGIN === 'true'
+const ENABLE_DEV_LOGIN =
+  import.meta.env.DEV === true &&
+  import.meta.env.VITE_ENABLE_DEV_LOGIN === 'true';
+
 type Role = 'STUDENT' | 'LECTURER';
 
 // ---------------------------------------------------------------------------
 // Hook: Đăng nhập bằng Google OAuth thật (access_token flow)
-// useGoogleLogin mở popup chọn tài khoản Google → trả về access_token
-// Backend dùng access_token để lấy thông tin user từ Google UserInfo API
 // ---------------------------------------------------------------------------
 function useGoogleOAuth(role: Role, onSuccess: (token: string, role: Role) => void, onError: (msg: string) => void) {
   return useGoogleLogin({
-    flow: 'implicit', // Popup chọn tài khoản → trả về access_token
+    flow: 'implicit',
     onSuccess: (tokenResponse) => {
       onSuccess(tokenResponse.access_token, role);
     },
@@ -35,7 +53,7 @@ function useGoogleOAuth(role: Role, onSuccess: (token: string, role: Role) => vo
       if (error.type === 'popup_closed') {
         onError('Bạn đã đóng cửa sổ đăng nhập Google.');
       } else if (error.type === 'popup_failed_to_open') {
-        onError('Không thể mở popup Google. Vui lòng cho phép popup trong trình duyệt.');
+        onError('Không thể mở popup Google. Vui lòng kiểm tra quyền mở popup của trình duyệt.');
       }
     },
   });
@@ -46,10 +64,35 @@ function useGoogleOAuth(role: Role, onSuccess: (token: string, role: Role) => vo
 // ---------------------------------------------------------------------------
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState<Role | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<string>(() =>
+    searchParams.get('reason') === 'expired' ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' : ''
+  );
 
-  // Xử lý sau khi Google trả về access_token
+  // 1. Khôi phục phiên hoặc tự động chuyển hướng nếu token hợp lệ
+  useEffect(() => {
+    if (searchParams.get('reason') === 'expired') {
+      return;
+    }
+
+    const token = localStorage.getItem('aita_token');
+    const rawUser = localStorage.getItem('aita_user');
+    if (token && rawUser && !isTokenExpired(token)) {
+      try {
+        const user = JSON.parse(rawUser);
+        if (user.role === 'LECTURER' || user.role === 'ADMIN') {
+          navigate('/lecturer/dashboard', { replace: true });
+        } else {
+          navigate('/dashboard', { replace: true });
+        }
+      } catch {
+        // Parse lỗi -> bỏ qua
+      }
+    }
+  }, [navigate, searchParams]);
+
+  // Xử lý sau khi Google trả về access_token thật
   const handleGoogleToken = async (accessToken: string, role: Role) => {
     setLoading(role);
     setError('');
@@ -66,21 +109,21 @@ export default function LoginPage() {
       }
     } catch {
       setLoading(null);
-      setError('Không thể lấy thông tin tài khoản Google. Vui lòng thử lại.');
+      setError('Không thể lấy thông tin tài khoản Google. Vui lòng kiểm tra kết nối mạng.');
       return;
     }
 
     if (!googleUser) {
       setLoading(null);
-      setError('Không lấy được thông tin tài khoản Google.');
+      setError('Không lấy được thông tin email Google.');
       return;
     }
 
-    // Bước 2: Gửi access_token + email lên backend để xác thực domain và cấp JWT
-    const res = await apiRequest('/auth/google', {
+    // Bước 2: Gửi access_token + email lên backend để xác thực domain FPT và cấp JWT
+    const res = await apiRequest<AuthResponseData>('/auth/google', {
       method: 'POST',
       body: JSON.stringify({
-        credential: 'google_access_token', // Phân biệt với mock_local_dev_token
+        credential: 'google_access_token',
         access_token: accessToken,
         email: googleUser.email,
         name: googleUser.name,
@@ -106,19 +149,21 @@ export default function LoginPage() {
 
   const handleError = (msg: string) => setError(msg);
 
-  // Hai hook riêng biệt cho Sinh viên và Giảng viên
+  // Hook Google OAuth chính thức
   const loginStudent = useGoogleOAuth('STUDENT', handleGoogleToken, handleError);
   const loginLecturer = useGoogleOAuth('LECTURER', handleGoogleToken, handleError);
 
-  // Dev Mode: Không cần Google OAuth thật
+  // Dev Mode: Đăng nhập nhanh nội bộ dev
   const handleDevLogin = async (role: Role) => {
+    if (!ENABLE_DEV_LOGIN) return;
+
     setLoading(role);
     setError('');
 
     const mockEmail =
       role === 'STUDENT' ? 'student.dev@fpt.edu.vn' : 'lecturer.dev@fe.edu.vn';
 
-    const res = await apiRequest('/auth/google', {
+    const res = await apiRequest<AuthResponseData>('/auth/google', {
       method: 'POST',
       body: JSON.stringify({
         credential: 'mock_local_dev_token',
@@ -143,22 +188,22 @@ export default function LoginPage() {
     }
   };
 
-  const handleStudentClick = () => {
+  const handleStudentGoogleClick = () => {
     setError('');
     if (IS_PLACEHOLDER) {
-      handleDevLogin('STUDENT');
-    } else {
-      loginStudent();
+      setError('Chưa cấu hình Google Client ID thật trong VITE_GOOGLE_CLIENT_ID.');
+      return;
     }
+    loginStudent();
   };
 
-  const handleLecturerClick = () => {
+  const handleLecturerGoogleClick = () => {
     setError('');
     if (IS_PLACEHOLDER) {
-      handleDevLogin('LECTURER');
-    } else {
-      loginLecturer();
+      setError('Chưa cấu hình Google Client ID thật trong VITE_GOOGLE_CLIENT_ID.');
+      return;
     }
+    loginLecturer();
   };
 
   const isLoading = loading !== null;
@@ -170,7 +215,7 @@ export default function LoginPage() {
         background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
       }}
     >
-      {/* Ambient glow */}
+      {/* Hiệu ứng nền */}
       <div
         style={{
           position: 'fixed',
@@ -183,16 +228,16 @@ export default function LoginPage() {
         }}
       />
 
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 420 }}>
-        {/* Card */}
+      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 440 }}>
+        {/* Card đăng nhập */}
         <div
           style={{
-            background: 'rgba(15,23,42,0.85)',
+            background: 'rgba(15,23,42,0.88)',
             backdropFilter: 'blur(24px)',
             WebkitBackdropFilter: 'blur(24px)',
             border: '1px solid rgba(99,102,241,0.25)',
             borderRadius: 24,
-            padding: '40px 36px',
+            padding: '38px 32px',
             boxShadow:
               '0 0 0 1px rgba(255,255,255,0.04) inset,' +
               '0 32px 64px rgba(0,0,0,0.5)',
@@ -221,45 +266,11 @@ export default function LoginPage() {
           <h1 style={{ color: '#f8fafc', fontWeight: 800, fontSize: 24, margin: '0 0 8px' }}>
             AITA-Intelligent
           </h1>
-          <p style={{ color: '#94a3b8', fontSize: 14, margin: '0 0 32px', lineHeight: 1.6 }}>
+          <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 28px', lineHeight: 1.6 }}>
             Nền tảng Trợ lý Giảng dạy &amp; Phân tích Cú pháp AST
           </p>
 
-          {/* Dev Mode Banner */}
-          {IS_PLACEHOLDER && (
-            <div
-              style={{
-                background: 'rgba(245,158,11,0.1)',
-                border: '1px solid rgba(245,158,11,0.3)',
-                borderRadius: 12,
-                padding: '10px 14px',
-                marginBottom: 24,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 10,
-                textAlign: 'left',
-              }}
-            >
-              <AlertCircle size={16} style={{ color: '#f59e0b', marginTop: 1, flexShrink: 0 }} />
-              <div>
-                <p style={{ color: '#fbbf24', fontWeight: 700, fontSize: 12, margin: '0 0 2px' }}>
-                  Chế độ Dev Local — Không dùng Google thật
-                </p>
-                <p style={{ color: '#d97706', fontSize: 11, margin: 0, lineHeight: 1.5 }}>
-                  Chưa cấu hình{' '}
-                  <code style={{ fontFamily: 'monospace', background: 'rgba(0,0,0,0.3)', padding: '0 3px', borderRadius: 3 }}>
-                    VITE_GOOGLE_CLIENT_ID
-                  </code>{' '}
-                  trong <code style={{ fontFamily: 'monospace', background: 'rgba(0,0,0,0.3)', padding: '0 3px', borderRadius: 3 }}>
-                    apps/web/.env
-                  </code>. Xem hướng dẫn tại{' '}
-                  <code style={{ fontFamily: 'monospace' }}>docs/06_Tutorial/README.md</code>.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Error */}
+          {/* Thông báo lỗi nếu có */}
           {error && (
             <div
               style={{
@@ -279,12 +290,12 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Buttons */}
+          {/* TUYẾN CHÍNH: Đăng nhập Google thật (Primary Path) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Sinh viên */}
+            {/* Sinh viên - Google */}
             <button
-              id="btn-login-student"
-              onClick={handleStudentClick}
+              id="btn-login-student-google"
+              onClick={handleStudentGoogleClick}
               disabled={isLoading}
               style={{
                 width: '100%',
@@ -292,60 +303,31 @@ export default function LoginPage() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 12,
-                padding: '14px 20px',
+                padding: '13px 20px',
                 borderRadius: 14,
                 border: '1px solid rgba(99,102,241,0.5)',
-                background:
-                  loading === 'STUDENT'
-                    ? 'rgba(99,102,241,0.25)'
-                    : 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(79,70,229,0.15) 100%)',
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(79,70,229,0.15) 100%)',
                 color: '#e0e7ff',
                 fontWeight: 700,
-                fontSize: 15,
+                fontSize: 14,
                 cursor: isLoading ? 'not-allowed' : 'pointer',
                 opacity: isLoading && loading !== 'STUDENT' ? 0.5 : 1,
                 transition: 'all 0.2s ease',
                 boxShadow: '0 4px 16px rgba(99,102,241,0.2)',
               }}
-              onMouseEnter={(e) => {
-                if (!isLoading) {
-                  (e.currentTarget as HTMLButtonElement).style.background =
-                    'linear-gradient(135deg, rgba(99,102,241,0.35) 0%, rgba(79,70,229,0.3) 100%)';
-                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
-                  (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                    '0 8px 24px rgba(99,102,241,0.35)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isLoading) {
-                  (e.currentTarget as HTMLButtonElement).style.background =
-                    'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(79,70,229,0.15) 100%)';
-                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-                  (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                    '0 4px 16px rgba(99,102,241,0.2)';
-                }
-              }}
             >
               {loading === 'STUDENT' ? (
                 <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-              ) : IS_PLACEHOLDER ? (
-                <GraduationCap size={18} style={{ color: '#818cf8' }} />
               ) : (
-                <GoogleIcon />
+                <GoogleIcon size={18} />
               )}
-              <span>
-                {loading === 'STUDENT'
-                  ? 'Đang xác thực...'
-                  : IS_PLACEHOLDER
-                  ? 'Sinh viên — Dev Mode (không cần Google)'
-                  : 'Đăng nhập với Google — Sinh viên'}
-              </span>
+              <span>Đăng nhập Google — Sinh viên</span>
             </button>
 
-            {/* Giảng viên */}
+            {/* Giảng viên - Google */}
             <button
-              id="btn-login-lecturer"
-              onClick={handleLecturerClick}
+              id="btn-login-lecturer-google"
+              onClick={handleLecturerGoogleClick}
               disabled={isLoading}
               style={{
                 width: '100%',
@@ -356,10 +338,7 @@ export default function LoginPage() {
                 padding: '12px 20px',
                 borderRadius: 14,
                 border: '1px solid rgba(245,158,11,0.35)',
-                background:
-                  loading === 'LECTURER'
-                    ? 'rgba(245,158,11,0.18)'
-                    : 'rgba(245,158,11,0.1)',
+                background: 'rgba(245,158,11,0.1)',
                 color: '#fde68a',
                 fontWeight: 600,
                 fontSize: 13,
@@ -367,63 +346,119 @@ export default function LoginPage() {
                 opacity: isLoading && loading !== 'LECTURER' ? 0.5 : 1,
                 transition: 'all 0.2s ease',
               }}
-              onMouseEnter={(e) => {
-                if (!isLoading) {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,158,11,0.2)';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(245,158,11,0.6)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isLoading) {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,158,11,0.1)';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(245,158,11,0.35)';
-                }
-              }}
             >
               {loading === 'LECTURER' ? (
                 <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-              ) : IS_PLACEHOLDER ? (
-                <School size={16} style={{ color: '#f59e0b' }} />
               ) : (
                 <GoogleIcon size={16} />
               )}
-              <span>
-                {loading === 'LECTURER'
-                  ? 'Đang xác thực...'
-                  : IS_PLACEHOLDER
-                  ? 'Giảng viên — Dev Mode (@fe.edu.vn)'
-                  : 'Đăng nhập với Google — Giảng viên'}
-              </span>
+              <span>Đăng nhập Google — Giảng viên</span>
             </button>
           </div>
 
-          {/* Domain policy */}
-          {!IS_PLACEHOLDER && (
+          {/* Quy định Domain FPT */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              marginTop: 18,
+              color: '#64748b',
+              fontSize: 12,
+            }}
+          >
+            <ShieldCheck size={13} style={{ color: '#22c55e' }} />
+            <span>
+              Chấp nhận domain{' '}
+              <strong style={{ color: '#94a3b8' }}>@fpt.edu.vn</strong> &amp;{' '}
+              <strong style={{ color: '#94a3b8' }}>@fe.edu.vn</strong>
+            </span>
+          </div>
+
+          {/* CHẾ ĐỘ DEV MODE (Chỉ hiển thị khi import.meta.env.DEV === true && VITE_ENABLE_DEV_LOGIN === 'true') */}
+          {ENABLE_DEV_LOGIN && (
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                marginTop: 20,
-                color: '#64748b',
-                fontSize: 12,
+                marginTop: 24,
+                paddingTop: 20,
+                borderTop: '1px dashed rgba(245,158,11,0.25)',
               }}
             >
-              <ShieldCheck size={13} style={{ color: '#22c55e' }} />
-              <span>
-                Sinh viên:{' '}
-                <strong style={{ color: '#94a3b8' }}>Google Account</strong> • Giảng viên:{' '}
-                <strong style={{ color: '#94a3b8' }}>@fe.edu.vn</strong>
-              </span>
+              <div
+                style={{
+                  background: 'rgba(245,158,11,0.08)',
+                  border: '1px solid rgba(245,158,11,0.25)',
+                  borderRadius: 14,
+                  padding: '14px',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                  <AlertCircle size={14} style={{ color: '#f59e0b' }} />
+                  <span style={{ color: '#fbbf24', fontSize: 12, fontWeight: 700 }}>
+                    Chế độ Dev Local (VITE_ENABLE_DEV_LOGIN=true)
+                  </span>
+                </div>
+                <p style={{ color: '#94a3b8', fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>
+                  Dùng để kiểm thử nhanh các màn hình giao diện mà không cần cấu hình Google Client ID thật:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button
+                    id="btn-login-student-dev"
+                    onClick={() => handleDevLogin('STUDENT')}
+                    disabled={isLoading}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(99,102,241,0.15)',
+                      border: '1px solid rgba(99,102,241,0.3)',
+                      color: '#a5b4fc',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <GraduationCap size={15} />
+                    <span>Sinh viên — Dev Mode</span>
+                  </button>
+
+                  <button
+                    id="btn-login-lecturer-dev"
+                    onClick={() => handleDevLogin('LECTURER')}
+                    disabled={isLoading}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      background: 'rgba(245,158,11,0.12)',
+                      border: '1px solid rgba(245,158,11,0.3)',
+                      color: '#fcd34d',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <School size={15} />
+                    <span>Giảng viên — Dev Mode</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
           {/* Footer */}
           <div
             style={{
-              marginTop: 28,
-              paddingTop: 20,
+              marginTop: 24,
+              paddingTop: 16,
               borderTop: '1px solid rgba(255,255,255,0.06)',
               color: '#475569',
               fontSize: 11,

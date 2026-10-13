@@ -5,7 +5,7 @@ import { prisma } from "../prisma.js";
 import { env } from "../config/env.js";
 
 const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
-const EMAIL_REGEX = /^[^@\s]+@(fpt|fe)\.edu\.vn$/;
+const EMAIL_REGEX = /^[^@\s]+@((fpt|fe)\.edu\.vn|gmail\.com)$/i;
 
 export const loginWithGoogle = async (req: Request, res: Response) => {
     try {
@@ -27,11 +27,11 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             email = mockEmail.trim().toLowerCase();
             fullName = email.split("@")[0].toUpperCase();
 
-            // =========================================================================
-            // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
-            //    Frontend nhận access_token → gọi Google UserInfo API lấy email
-            //    Backend nhận lại email đã xác thực để validate domain
-            // =========================================================================
+        // =========================================================================
+        // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
+        //    Frontend nhận access_token → gọi Google UserInfo API lấy email
+        //    Backend nhận lại email đã xác thực để validate domain
+        // =========================================================================
         } else if (credential === "google_access_token" && access_token && mockEmail) {
             // Xác minh access_token với Google UserInfo API
             let verifiedEmail = "";
@@ -95,9 +95,23 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
         }
 
 
-        // 3. Phân loại Role (Lấy theo nút người dùng chọn từ giao diện: LECTURER hoặc STUDENT)
-        const chosenRole: "STUDENT" | "LECTURER" = req.body.role === "LECTURER" ? "LECTURER" : "STUDENT";
-        const code = email.split("@")[0].toUpperCase();
+        // 3. Kiểm tra domain hợp lệ (chấp nhận FPT domain và gmail.com)
+        if (!EMAIL_REGEX.test(email)) {
+            return res.status(403).json({
+                success: false,
+                message: "Vui lòng sử dụng tài khoản email FPT Education (@fpt.edu.vn, @fe.edu.vn) hoặc Gmail (@gmail.com) để đăng nhập.",
+            });
+        }
+
+        // 4. Phân loại Role mặc định theo domain hoặc vai trò yêu cầu
+        const requestedRole = req.body.role;
+        const defaultRole: "STUDENT" | "LECTURER" =
+            requestedRole === "LECTURER" || requestedRole === "STUDENT"
+                ? requestedRole
+                : email.endsWith("@fe.edu.vn")
+                ? "LECTURER"
+                : "STUDENT";
+        let code = email.split("@")[0].toUpperCase();
 
         // 5. Tìm hoặc tạo user trong DB (khớp tên quan hệ studentProfile/lecturerProfile/adminProfile)
         let user = await prisma.user.findUnique({
@@ -106,15 +120,28 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
         });
 
         if (!user) {
+            // Đảm bảo studentCode hoặc lecturerCode là duy nhất trong DB
+            if (defaultRole === "STUDENT") {
+                const existingStudent = await prisma.student.findUnique({ where: { studentCode: code } });
+                if (existingStudent) {
+                    code = `${code}_${Date.now().toString().slice(-4)}`;
+                }
+            } else if (defaultRole === "LECTURER") {
+                const existingLecturer = await prisma.lecturer.findUnique({ where: { lecturerCode: code } });
+                if (existingLecturer) {
+                    code = `${code}_${Date.now().toString().slice(-4)}`;
+                }
+            }
+
             user = await prisma.user.create({
                 data: {
                     email,
                     fullName,
-                    role: chosenRole,
-                    ...(chosenRole === "STUDENT" && {
+                    role: defaultRole,
+                    ...(defaultRole === "STUDENT" && {
                         studentProfile: { create: { studentCode: code } },
                     }),
-                    ...(chosenRole === "LECTURER" && {
+                    ...(defaultRole === "LECTURER" && {
                         lecturerProfile: { create: { lecturerCode: code } },
                     }),
                 },

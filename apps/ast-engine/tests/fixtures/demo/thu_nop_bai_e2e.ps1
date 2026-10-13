@@ -40,7 +40,7 @@ $h2 = Invoke-RestMethod "http://localhost:8000/health"
 Write-Host ("Engine : " + $h2.status + " (v" + $h2.version + ")")
 
 Write-Host "== Giang vien tao lop va assignment =="
-$lec = Login "lecturer@fe.edu.vn"
+$lec = Login "lecturer.dev@fe.edu.vn"
 $H = @{ Authorization = "Bearer $lec" }
 $classCode = "SE" + (Get-Random -Minimum 1000 -Maximum 9999)   # tranh trung ma lop khi chay lai
 $class = Invoke-RestMethod -Uri "$base/api/classes" -Method Post -Headers $H -ContentType "application/json" `
