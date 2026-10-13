@@ -27,11 +27,11 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             email = mockEmail.trim().toLowerCase();
             fullName = email.split("@")[0].toUpperCase();
 
-        // =========================================================================
-        // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
-        //    Frontend nhận access_token → gọi Google UserInfo API lấy email
-        //    Backend nhận lại email đã xác thực để validate domain
-        // =========================================================================
+            // =========================================================================
+            // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
+            //    Frontend nhận access_token → gọi Google UserInfo API lấy email
+            //    Backend nhận lại email đã xác thực để validate domain
+            // =========================================================================
         } else if (credential === "google_access_token" && access_token && mockEmail) {
             // Xác minh access_token với Google UserInfo API
             let verifiedEmail = "";
@@ -98,14 +98,14 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
         // 3. Phân loại Role và kiểm tra domain theo quy định
         // - Giảng viên: Bắt buộc phải là email cán bộ trường (@fe.edu.vn)
         // - Sinh viên: Cho phép mọi tài khoản Google (bao gồm @fpt.edu.vn, @gmail.com, v.v.)
-        const isLecturer = email.endsWith("@fe.edu.vn");
+        const isLecturer = email.endsWith("@fpt.edu.vn");
         const defaultRole: "STUDENT" | "LECTURER" = isLecturer ? "LECTURER" : "STUDENT";
 
         // Nếu client gửi lên role LECTURER nhưng email không phải @fe.edu.vn -> từ chối
         if (req.body.role === "LECTURER" && !isLecturer) {
             return res.status(403).json({
                 success: false,
-                message: "Tài khoản Giảng viên bắt buộc phải sử dụng email trường (@fe.edu.vn).",
+                message: "Tài khoản Giảng viên bắt buộc phải sử dụng email trường (@fpt.edu.vn).",
             });
         }
         const code = email.split("@")[0].toUpperCase();
