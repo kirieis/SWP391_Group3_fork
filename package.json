@@ -3,5 +3,13 @@
     "private": true,
     "workspaces": [
         "apps/*"
-    ]
+    ],
+    "scripts": {
+        "lint": "npm run lint --workspace=@aita/queue-worker",
+        "lint:worker": "npm run lint --workspace=@aita/queue-worker",
+        "test": "npm run test --workspace=@aita/queue-worker",
+        "test:worker": "npm run test --workspace=@aita/queue-worker",
+        "test:coverage": "npm run test:coverage --workspace=@aita/queue-worker",
+        "build": "npm run build --workspace=@aita/queue-worker"
+    }
 }

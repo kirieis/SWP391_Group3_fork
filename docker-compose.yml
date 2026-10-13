@@ -19,10 +19,30 @@ services:
     image: redis:7-alpine
     container_name: aita_redis
     restart: always
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+
+  # 2.1 Queue Worker & Git Analytics (Module 5)
+  queue-worker:
+    build:
+      context: .
+      dockerfile: ./apps/queue-worker/Dockerfile
+    container_name: aita_queue_worker
+    restart: always
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - API_GATEWAY_URL=http://api:5000
+      - SANDBOX_URL=http://sandbox:5001
+      - GENAI_GATEWAY_URL=http://genai:5002
+      - INTERNAL_API_KEY=aita_internal_secret_key_2026
+      - USE_MOCKS=true
+      - NODE_ENV=production
 
   # 3. AST Plagiarism Detection Engine (FastAPI - Phân hệ 4)
   ast-engine:

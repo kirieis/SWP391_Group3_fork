@@ -1,6 +1,6 @@
 /**
  * Module 4 (AST Plagiarism Engine) contract.
- * Service URL: http://localhost:8001
+ * Service URL: http://localhost:8000
  * Endpoint: POST /analyze
  *
  * Thresholds per CLAUDE.md:

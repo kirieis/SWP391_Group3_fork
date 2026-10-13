@@ -2,13 +2,17 @@ import { AxiosError } from "axios";
 import { UnrecoverableError } from "bullmq";
 
 /**
- * Error Classification per CLAUDE.md Rule 4:
+ * Error Classification per CLAUDE.md Rule 4 and Milestone 3 specs:
  *
  * 1. Infrastructure Error (network, ECONNREFUSED, 5xx, 429)
  *    → Throw standard Error → BullMQ retries with exponential backoff
  *
  * 2. Validation Error (corrupt payload, 4xx other than 429)
  *    → UnrecoverableError → Do NOT retry, report failure to Module 1
+ *
+ * 3. GenAiUnavailableError (all providers down / gateway timeout / 429 exhaustion)
+ *    → Non-fatal to grading! Handled by setting status to AI_REVIEW_PENDING
+ *      and scheduling a delayed retry job (ai-review-retry).
  *
  * Business outcomes (TIMEOUT, SECURITY_VIOLATION, COMPILATION_ERROR) are
  * handled in the processor before reaching the error classifier.
@@ -28,6 +32,16 @@ export class ValidationError extends UnrecoverableError {
   constructor(message: string) {
     super(message);
     this.name = "ValidationError";
+  }
+}
+
+export class GenAiUnavailableError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "GenAiUnavailableError";
   }
 }
 
@@ -70,6 +84,10 @@ export function classifyAxiosError(error: AxiosError, context: string): never {
 export function classifyError(error: unknown, context: string): never {
   if (error instanceof UnrecoverableError) {
     throw error; // Already classified
+  }
+
+  if (error instanceof GenAiUnavailableError) {
+    throw error; // GenAi specific error
   }
 
   if (error instanceof AxiosError) {

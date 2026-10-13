@@ -1,5 +1,9 @@
 /**
  * Producer utility — convenience wrapper for external callers.
- * Re-exports enqueueSubmission for use by Module 1 or smoke tests.
+ * Re-exports enqueueSubmission, enqueueBatch, and getBatchProgress.
  */
-export { enqueueSubmission } from "./submission.queue.js";
+export {
+  enqueueSubmission,
+  enqueueBatch,
+  getBatchProgress,
+} from "./submission.queue.js";

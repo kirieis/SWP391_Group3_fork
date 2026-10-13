@@ -36,8 +36,8 @@ jobs:
       - name: Typecheck & Build
         run: npm run build --workspace=@aita/queue-worker
 
-      - name: Run Unit Tests
-        run: npm run test --workspace=@aita/queue-worker
+      - name: Run Unit Tests with Coverage
+        run: npm run test:coverage --workspace=@aita/queue-worker
 
   # Lưu ý: Khi các phân hệ khác (apps/api, apps/web, apps/sandbox-engine) hoàn thiện build & test,
   # các thành viên phụ trách có thể bổ sung thêm job kiểm tra tương ứng vào đây.
