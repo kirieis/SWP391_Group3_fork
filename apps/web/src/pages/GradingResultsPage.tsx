@@ -128,7 +128,13 @@ export default function GradingResultsPage() {
     }
   };
 
-  const isPending = !submission || submission.astCheckStatus === 'PENDING' || submission.status === 'PENDING' || submission.status === 'RUNNING';
+  const isPending =
+    !submission ||
+    submission.astCheckStatus === 'PENDING' ||
+    submission.status === 'PENDING' ||
+    submission.status === 'RUNNING' ||
+    submission.status === 'RUNNING_TESTS' ||
+    submission.status === 'QUEUED';
   const isScoreWithheld = submission?.status === 'SCORE_WITHHELD';
 
   // Lấy test cases thật từ assignment trong kết quả backend (KHÔNG DÙNG FAKE FALLBACK)
@@ -147,6 +153,13 @@ export default function GradingResultsPage() {
   // Đánh giá AI thật (nếu có từ aiFeedback)
   const hasAiFeedback = Boolean(submission?.aiFeedback && String(submission.aiFeedback).trim().length > 0);
 
+  const isGradedOrComplete =
+    submission?.status === 'COMPLETED' ||
+    submission?.status === 'GRADED' ||
+    submission?.status === 'AI_REVIEW_PENDING' ||
+    submission?.status === 'SCORE_WITHHELD' ||
+    (submission?.totalScore !== null && submission?.totalScore !== undefined);
+
   // Kiểm tra từng bước tiến trình thực tế (Stepper) dựa trên dữ liệu thật của backend
   const stepStates = [
     {
@@ -157,22 +170,20 @@ export default function GradingResultsPage() {
     {
       label: 'Building',
       desc: 'Môi trường Docker',
-      status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
-          ? 'DONE'
-          : submission?.status === 'RUNNING'
-          ? 'ACTIVE'
-          : 'NEUTRAL',
+      status: isGradedOrComplete
+        ? 'DONE'
+        : submission?.status === 'RUNNING' || submission?.status === 'RUNNING_TESTS'
+        ? 'ACTIVE'
+        : 'NEUTRAL',
     },
     {
       label: 'Running Tests',
       desc: 'Sandbox kiểm thử',
-      status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
-          ? 'DONE'
-          : submission?.status === 'RUNNING'
-          ? 'ACTIVE'
-          : 'NEUTRAL',
+      status: isGradedOrComplete
+        ? 'DONE'
+        : submission?.status === 'RUNNING' || submission?.status === 'RUNNING_TESTS'
+        ? 'ACTIVE'
+        : 'NEUTRAL',
     },
     {
       label: 'AST Analysis',
@@ -194,12 +205,11 @@ export default function GradingResultsPage() {
     {
       label: 'Complete',
       desc: isScoreWithheld ? 'Giữ điểm' : 'Hoàn tất',
-      status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD'
-          ? 'DONE'
-          : submission?.status === 'FAILED'
-          ? 'FAILED'
-          : 'NEUTRAL',
+      status: isGradedOrComplete
+        ? 'DONE'
+        : submission?.status === 'FAILED' || submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' || submission?.status === 'SECURITY_VIOLATION'
+        ? 'FAILED'
+        : 'NEUTRAL',
     },
   ];
 
