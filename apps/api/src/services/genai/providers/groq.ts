@@ -17,7 +17,7 @@ export class GroqProvider extends BaseProvider {
       name: "groq",
       apiKey,
       baseUrl: "https://api.groq.com/openai/v1",
-      model: "llama-3.3-70b-versatile",
+      model: process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b",
       timeoutMs,
     });
   }
@@ -27,7 +27,7 @@ export class GroqProvider extends BaseProvider {
   }
 
   protected buildRequestBody(request: AIRequest): Record<string, unknown> {
-    return {
+    const body: Record<string, unknown> = {
       model: this.model,
       messages: [
         { role: "system", content: request.systemPrompt },
@@ -36,6 +36,10 @@ export class GroqProvider extends BaseProvider {
       max_tokens: request.maxTokens ?? 2048,
       temperature: request.temperature ?? 0.2,
     };
+    if (request.jsonMode) {
+      body.response_format = { type: "json_object" };
+    }
+    return body;
   }
 
   protected parseResponse(data: unknown, latencyMs: number): AIResponse {

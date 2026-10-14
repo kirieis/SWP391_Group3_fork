@@ -1,4 +1,4 @@
-﻿/**
+/**
  * cache.service.ts — Redis Caching Layer (NFR-09: API response < 100ms)
  *
  * Chien luoc cache:
@@ -20,7 +20,7 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 let _client: Redis | null = null;
 let _initAttempted = false;
 
-function getRedisClient(): Redis | null {
+export function getRedisClient(): Redis | null {
   if (_initAttempted) return _client;
   _initAttempted = true;
 

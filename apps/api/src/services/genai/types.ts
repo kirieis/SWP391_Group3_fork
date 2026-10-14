@@ -51,6 +51,9 @@ export interface AIRequest {
    * Với generation prompts (sinh đề bài) có thể đặt cao hơn (0.5-0.7).
    */
   temperature?: number;
+
+  /** Ép model trả về JSON object thuần nếu provider hỗ trợ */
+  jsonMode?: boolean;
 }
 
 /**
@@ -140,6 +143,11 @@ export interface GatewayConfig {
   fallbackProvider: ProviderName;
   requestTimeoutMs: number;
   maxRetriesPerProvider: number;
+  totalDeadlineMs?: number;
+  timeoutGroqMs?: number;
+  timeoutCerebrasMs?: number;
+  timeoutGeminiMs?: number;
+  enableGemini?: boolean;
 }
 
 // ==============================================================================

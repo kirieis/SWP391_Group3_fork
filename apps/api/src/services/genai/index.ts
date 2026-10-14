@@ -21,16 +21,25 @@ export {
   BenchmarkSummary,
 } from "./types.js";
 
-// Gateway
-export { AIGateway, GatewayResult } from "./gateway.js";
+// Gateway & Singleton
+export {
+  AIGateway,
+  GatewayResult,
+  computeReviewHash,
+  getCachedReview,
+  setCachedReview,
+} from "./gateway.js";
+export { aiGateway } from "./instance.js";
 
 // Provider factory (dùng khi cần tạo provider riêng lẻ, vd: benchmark)
 export { createProvider } from "./providers/index.js";
 
-// Prompt builders
+// Prompt builders & constants
 export {
   buildAssignmentGenerationPrompt,
   buildCleanCodeReviewPrompt,
   buildErrorExplanationPrompt,
   BENCHMARK_PROMPTS,
+  MAX_CODE_CHARS,
+  PROMPT_VERSION,
 } from "./prompts/index.js";

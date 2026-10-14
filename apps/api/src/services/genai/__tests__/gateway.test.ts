@@ -106,7 +106,9 @@ function createTestGateway(
       requestTimeoutMs: 15000,
       maxRetriesPerProvider: 1,
     },
+    keyPool: { groq: [], cerebras: [], gemini: [] },
     requestCounter: {},
+    totalDeadlineMs: 40000,
   });
   return gateway;
 }
@@ -189,7 +191,7 @@ async function testStatsCounter(): Promise<void> {
   await gateway.chat(MOCK_REQUEST);
   await gateway.chat(MOCK_REQUEST);
 
-  const stats = gateway.getStats();
+  const stats = await gateway.getStats();
   const keys = Object.keys(stats);
 
   assert(keys.length > 0, "Stats should have at least 1 entry");

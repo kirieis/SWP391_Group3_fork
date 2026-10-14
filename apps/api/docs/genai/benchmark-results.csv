@@ -1,145 +1,21 @@
 provider,model,promptLabel,latencyMs,tokensPerSecond,promptTokens,completionTokens,totalTokens,success,errorMessage
-groq,unknown,gen-basic-loop,532,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-basic-loop,211,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-basic-loop,142,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-linked-list,180,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-linked-list,170,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-linked-list,146,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-sorting,188,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-sorting,149,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,gen-sorting,287,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-clean,155,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-clean,203,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-clean,256,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-messy,162,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-messy,270,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-messy,143,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-medium,144,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-medium,294,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-medium,266,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-python,164,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-python,157,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,review-python,161,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-null-pointer,259,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-null-pointer,155,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-null-pointer,146,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-syntax,151,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-syntax,175,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-syntax,508,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-type-mismatch,311,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-type-mismatch,272,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-groq,unknown,error-type-mismatch,151,0,0,0,0,false,"Unexpected HTTP 404 from groq: {""error"":{""message"":""The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."",""type"":""invalid_request_error"",""code"":""model_not_found""}}
-"
-gemini,unknown,gen-basic-loop,4011,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,gen-basic-loop,21698,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,gen-basic-loop,1174,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,gen-linked-list,696,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,gen-linked-list,3668,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,gen-linked-list,15407,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,gen-sorting,346,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,gen-sorting,333,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,gen-sorting,485,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,review-clean,686,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,review-clean,3837,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,review-clean,1513,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,review-messy,979,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,review-messy,678,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,review-messy,4770,0,0,0,0,false,"Server error from gemini (HTTP 503)"
-gemini,unknown,review-medium,367,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,review-medium,341,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,review-medium,380,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,review-python,513,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,review-python,384,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,review-python,400,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-null-pointer,324,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-null-pointer,498,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-null-pointer,371,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-syntax,350,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-syntax,297,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-syntax,307,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-type-mismatch,356,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-type-mismatch,331,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
-gemini,unknown,error-type-mismatch,337,0,0,0,0,false,"Rate limited by gemini (HTTP 429). Body: {
-  ""error"": {
-    ""code"": 429,
-    ""message"": ""You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-a"
+groq,qwen/qwen3.8-27b,gen-basic-loop,2143,243,256,521,777,true,
+groq,qwen/qwen3.8-27b,gen-linked-list,1537,294,255,452,707,true,
+groq,qwen/qwen3.8-27b,gen-sorting,4339,472,260,2048,2308,true,
+groq,unknown,review-clean,260,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Used 980,"
+groq,unknown,review-messy,149,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Used 960,"
+groq,unknown,review-medium,148,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Used 940,"
+groq,unknown,review-python,253,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Used 921,"
+groq,unknown,error-null-pointer,138,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Used 900,"
+groq,unknown,error-syntax,138,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Request too large for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Requested "
+groq,unknown,error-type-mismatch,243,0,0,0,0,false,"Rate limited by groq (HTTP 429). Body: {""error"":{""message"":""Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01km1ttbn7e7g8egkcprme368a` service tier `on_demand` on output tokens per minute (OTPM): Limit 1000, Used 862,"
+gemini,unknown,gen-basic-loop,1072,0,0,0,0,false,"Server error from gemini (HTTP 503)"
+gemini,gemini-2.5-flash,gen-linked-list,11226,7,241,81,2285,true,
+gemini,gemini-2.5-flash,gen-sorting,10812,7,246,81,2290,true,
+gemini,gemini-2.5-flash,review-clean,10119,46,888,469,2791,true,
+gemini,gemini-2.5-flash,review-messy,8251,55,866,456,2450,true,
+gemini,gemini-2.5-flash,review-medium,10300,36,891,372,2935,true,
+gemini,gemini-2.5-flash,review-python,6487,52,865,335,2006,true,
+gemini,gemini-2.5-flash,error-null-pointer,5767,7,366,41,1386,true,
+gemini,gemini-2.5-flash,error-syntax,5707,65,336,373,1356,true,
+gemini,gemini-2.5-flash,error-type-mismatch,6267,6,340,40,1360,true,

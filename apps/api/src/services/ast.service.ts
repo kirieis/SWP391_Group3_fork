@@ -326,7 +326,6 @@ export const astService = {
                                     await tx.scoreAuditLog.create({
                                         data: {
                                             submissionId,
-                                            editorId: null, // Hành động tự động từ hệ thống AST Engine (không vi phạm FK User)
                                             oldScore: submission.totalScore,
                                             newScore: submission.totalScore ?? 0,
                                             reason: auditReason,

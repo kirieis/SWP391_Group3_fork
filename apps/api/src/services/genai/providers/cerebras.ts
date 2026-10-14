@@ -17,7 +17,7 @@ export class CerebrasProvider extends BaseProvider {
       name: "cerebras",
       apiKey,
       baseUrl: "https://api.cerebras.ai/v1",
-      model: "llama-3.3-70b",
+      model: process.env.CEREBRAS_MODEL ?? "llama-3.3-70b",
       timeoutMs,
     });
   }
@@ -27,7 +27,7 @@ export class CerebrasProvider extends BaseProvider {
   }
 
   protected buildRequestBody(request: AIRequest): Record<string, unknown> {
-    return {
+    const body: Record<string, unknown> = {
       model: this.model,
       messages: [
         { role: "system", content: request.systemPrompt },
@@ -36,6 +36,10 @@ export class CerebrasProvider extends BaseProvider {
       max_tokens: request.maxTokens ?? 2048,
       temperature: request.temperature ?? 0.2,
     };
+    if (request.jsonMode) {
+      body.response_format = { type: "json_object" };
+    }
+    return body;
   }
 
   protected parseResponse(data: unknown, latencyMs: number): AIResponse {

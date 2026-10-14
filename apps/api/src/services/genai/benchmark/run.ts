@@ -28,9 +28,9 @@ import type { ProviderName, BenchmarkRun, BenchmarkSummary } from "../types.js";
 // ==============================================================================
 
 const PROVIDERS_TO_TEST: ProviderName[] = ["groq", "cerebras", "gemini"];
-const RUNS_PER_PROMPT = 3;
+const RUNS_PER_PROMPT = 1;
 const TIMEOUT_MS = 30000; // Benchmark cho phép timeout cao hơn production
-const DELAY_BETWEEN_REQUESTS_MS = 1500; // Tránh rate limit khi test liên tục
+const DELAY_BETWEEN_REQUESTS_MS = 1000; // Tránh rate limit khi test liên tục
 
 // ==============================================================================
 // Hàm tiện ích

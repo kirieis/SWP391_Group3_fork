@@ -18,7 +18,7 @@ export class GeminiProvider extends BaseProvider {
       name: "gemini",
       apiKey,
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      model: "gemini-flash-latest",
+      model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
       timeoutMs,
     });
   }
@@ -56,6 +56,7 @@ export class GeminiProvider extends BaseProvider {
       generationConfig: {
         maxOutputTokens: request.maxTokens ?? 2048,
         temperature: request.temperature ?? 0.2,
+        ...(request.jsonMode ? { responseMimeType: "application/json" } : {}),
       },
     };
   }
