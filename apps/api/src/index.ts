@@ -9,8 +9,7 @@ import classRoutes from "./routes/class.routes.js";
 import assignmentRoutes from "./routes/assignment.routes.js";
 import submissionRoutes from "./routes/submission.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
-
-
+import genaiRoutes from "./routes/genai.routes.js";
 
 // Nạp biến môi trường từ file .env
 dotenv.config();
@@ -23,6 +22,7 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/classes", classRoutes);
+app.use("/api", genaiRoutes);
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/submissions", submissionRoutes);
 app.use("/api/dashboard", dashboardRoutes);
