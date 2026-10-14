@@ -6,6 +6,7 @@ import { prisma } from "../prisma.js";
 import { emitGradingProgress } from "../socket/index.js";
 import { env } from "../config/env.js";
 import { astService } from "../services/ast.service.js";
+import { gradingService } from "../services/grading.service.js";
 
 // Giới hạn số lần nộp tối đa theo Risk R01 (mặc định 5 lần)
 const MAX_SUBMISSION_ATTEMPTS = 5;
@@ -60,7 +61,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: "File tải lên không phải là file ZIP hợp lệ (Sai magic bytes)." });
         }
 
-        // 5. Tạo submission với đường dẫn file đã lưu & AST_CHECK_STATUS = PENDING
+        // 6. Tạo submission với đường dẫn file đã lưu & AST_CHECK_STATUS = PENDING
         const submission = await prisma.submission.create({
             data: {
                 assignmentId,
@@ -80,12 +81,14 @@ export const submitAssignment = async (req: Request, res: Response) => {
             message: "Bài nộp đã được tiếp nhận và đưa vào hàng đợi chấm.",
         });
 
-        // Kích hoạt AST check trong background — KHÔNG await để trả 202 ngay (Risk R-ADR-2)
-        // setImmediate đảm bảo response gửi trước khi background task bắt đầu
-        setImmediate(() => {
-            astService.check(submission.id, file.path).catch((err) =>
-                console.error("[AST Background] Unhandled error:", err)
-            );
+        // 7. Chạy toàn bộ pipeline chấm điểm tự động trong nền (Sandbox -> AST -> AI Review -> Hoàn tất điểm)
+        // Dùng setImmediate để trả về 202 Accepted ngay cho client theo US12
+        setImmediate(async () => {
+            try {
+                await gradingService.gradeSubmission(submission.id, file.path);
+            } catch (err) {
+                console.error("[Grading Pipeline] Unhandled error:", err);
+            }
         });
 
         // Trả về mã 202 Accepted theo đúng đặc tả US12 — NGAY LẬP TỨC
@@ -350,7 +353,13 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
         const { status, totalScore, aiFeedback, step, progressPercent, message } = req.body;
 
         // 1. Validate trạng thái hợp lệ
-        const ALLOWED_STATUS = ["PENDING", "QUEUED", "RUNNING_TESTS", "GRADED", "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION"];
+        // Bao gồm AI_REVIEW_PENDING (Milestone 3) và COMPLETED (mapped từ GRADED)
+        const ALLOWED_STATUS = [
+            "PENDING", "QUEUED", "RUNNING_TESTS",
+            "GRADED", "AI_REVIEW_PENDING",            // Từ queue-worker
+            "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION",
+            "COMPLETED",                              // Trạng thái hoàn tất trong DB
+        ];
         if (status && !ALLOWED_STATUS.includes(status)) {
             return res.status(400).json({ success: false, message: "Trạng thái chấm điểm không hợp lệ." });
         }
@@ -373,10 +382,16 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             return res.status(404).json({ success: false, message: "Không tìm thấy bài nộp." });
         }
 
+        // Map trạng thái từ queue-worker sang trạng thái DB chuẩn mà frontend hiểu
+        // GRADED / AI_REVIEW_PENDING → COMPLETED (pipeline chấm hoàn tất)
+        const dbStatus = status === "GRADED" || status === "AI_REVIEW_PENDING"
+            ? "COMPLETED"
+            : status;
+
         const updated = await prisma.submission.update({
             where: { id: submissionId },
             data: {
-                ...(status && { status }),
+                ...(dbStatus && { status: dbStatus }),
                 ...(totalScore !== undefined && totalScore !== null && { totalScore: Number(totalScore) }),
                 ...(aiFeedback && { aiFeedback }),
             },

@@ -161,7 +161,7 @@ model Submission {
   studentId    String            @map("student_id")
   fileUrl      String            @map("file_url")
   fileHash     String?           @map("file_hash") // SHA-256
-  status       String            // "PENDING", "RUNNING", "COMPLETED", "SCORE_WITHHELD", "FAILED"
+  status       String            // "PENDING", "RUNNING_TESTS", "COMPLETED", "SCORE_WITHHELD", "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION", "FAILED"
   totalScore   Float?            @map("total_score")
   aiFeedback   String?           @map("ai_feedback") @db.Text
   submittedAt  DateTime          @default(now()) @map("submitted_at")
