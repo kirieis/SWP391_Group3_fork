@@ -10,6 +10,8 @@ import assignmentRoutes from "./routes/assignment.routes.js";
 import submissionRoutes from "./routes/submission.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import genaiRoutes from "./routes/genai.routes.js";
+import plagiarismRoutes from "./routes/plagiarism.routes.js";
+
 
 // Nạp biến môi trường từ file .env
 dotenv.config();
@@ -26,6 +28,7 @@ app.use("/api", genaiRoutes);
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/submissions", submissionRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/plagiarism", plagiarismRoutes);
 
 // Hỗ trợ alias chuẩn ADR-001: POST /api/internal/submissions/:id/ast-check
 app.use("/api/internal/submissions", submissionRoutes);
