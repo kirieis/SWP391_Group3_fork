@@ -86,14 +86,19 @@ export default function GradingResultsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSubmission(true);
 
-    // Tự động polling cập nhật mỗi 3 giây nếu bài nộp vẫn đang PENDING
+    // Tự động polling cập nhật mỗi 2 giây nếu bài nộp chưa có hoặc vẫn đang trong tiến trình chấm
     const interval = setInterval(() => {
-      if (submission?.astCheckStatus === 'PENDING' || submission?.status === 'PENDING' || submission?.status === 'RUNNING') {
+      if (
+        !submission ||
+        submission?.astCheckStatus === 'PENDING' ||
+        submission?.status === 'PENDING' ||
+        submission?.status === 'RUNNING' ||
+        submission?.status === 'RUNNING_TESTS'
+      ) {
         loadSubmission(false);
       }
-    }, 3000);
+    }, 2000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, submission?.astCheckStatus, submission?.status]);
 
   // Xử lý gửi khiếu nại (Appeal) thật qua POST /submissions/appeal
@@ -128,7 +133,9 @@ export default function GradingResultsPage() {
     }
   };
 
-  const isPending = !submission || submission.astCheckStatus === 'PENDING' || submission.status === 'PENDING' || submission.status === 'RUNNING';
+  // isPending = còn đang trong pipeline chấm (hiển thị spinner)
+  const TERMINAL_STATUSES = ['COMPLETED', 'SCORE_WITHHELD', 'GRADED', 'AI_REVIEW_PENDING', 'COMPILATION_ERROR', 'TIMEOUT', 'SECURITY_VIOLATION', 'FAILED'];
+  const isPending = !submission || (!TERMINAL_STATUSES.includes(submission.status || '') && submission.astCheckStatus === 'PENDING') || submission.status === 'PENDING' || submission.status === 'RUNNING' || submission.status === 'RUNNING_TESTS';
   const isScoreWithheld = submission?.status === 'SCORE_WITHHELD';
 
   // Lấy test cases thật từ assignment trong kết quả backend (KHÔNG DÙNG FAKE FALLBACK)
@@ -158,9 +165,13 @@ export default function GradingResultsPage() {
       label: 'Building',
       desc: 'Môi trường Docker',
       status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
+        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' ||
+        submission?.status === 'GRADED' || submission?.status === 'AI_REVIEW_PENDING' ||
+        submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' ||
+        submission?.status === 'SECURITY_VIOLATION' ||
+        (submission?.totalScore !== null && submission?.totalScore !== undefined)
           ? 'DONE'
-          : submission?.status === 'RUNNING'
+          : submission?.status === 'RUNNING' || submission?.status === 'RUNNING_TESTS'
           ? 'ACTIVE'
           : 'NEUTRAL',
     },
@@ -168,9 +179,13 @@ export default function GradingResultsPage() {
       label: 'Running Tests',
       desc: 'Sandbox kiểm thử',
       status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
+        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' ||
+        submission?.status === 'GRADED' || submission?.status === 'AI_REVIEW_PENDING' ||
+        submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' ||
+        submission?.status === 'SECURITY_VIOLATION' ||
+        (submission?.totalScore !== null && submission?.totalScore !== undefined)
           ? 'DONE'
-          : submission?.status === 'RUNNING'
+          : submission?.status === 'RUNNING' || submission?.status === 'RUNNING_TESTS'
           ? 'ACTIVE'
           : 'NEUTRAL',
     },
@@ -178,7 +193,8 @@ export default function GradingResultsPage() {
       label: 'AST Analysis',
       desc: 'Winnowing AST',
       status:
-        submission?.astCheckStatus === 'DONE' || submission?.astCheckStatus === 'NEEDS_REVIEW'
+        submission?.astCheckStatus === 'DONE' || submission?.astCheckStatus === 'NEEDS_REVIEW' ||
+        ((submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD') && submission?.astCheckStatus !== 'FAILED')
           ? 'DONE'
           : submission?.astCheckStatus === 'PENDING'
           ? 'ACTIVE'
@@ -189,13 +205,16 @@ export default function GradingResultsPage() {
     {
       label: 'AI Review',
       desc: 'Đánh giá AI',
-      status: hasAiFeedback ? 'DONE' : 'NEUTRAL',
+      status: hasAiFeedback || submission?.status === 'COMPLETED' ? 'DONE' : 'NEUTRAL',
     },
     {
       label: 'Complete',
       desc: isScoreWithheld ? 'Giữ điểm' : 'Hoàn tất',
       status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD'
+        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' ||
+        submission?.status === 'GRADED' || submission?.status === 'AI_REVIEW_PENDING' ||
+        submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' ||
+        submission?.status === 'SECURITY_VIOLATION'
           ? 'DONE'
           : submission?.status === 'FAILED'
           ? 'FAILED'
@@ -356,7 +375,7 @@ export default function GradingResultsPage() {
                   {isScoreWithheld ? (
                     <span className="text-xs text-rose-600 font-semibold">Tạm giữ điểm</span>
                   ) : submission?.totalScore !== null && submission?.totalScore !== undefined ? (
-                    `${submission.totalScore} / 100`
+                    `${(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)} / 10`
                   ) : (
                     'Chờ Sandbox'
                   )}
@@ -486,7 +505,7 @@ export default function GradingResultsPage() {
               {isScoreWithheld
                 ? '---'
                 : submission?.totalScore !== null && submission?.totalScore !== undefined
-                ? (submission.totalScore / 10).toFixed(1)
+                ? (submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
                 : '---'}
             </div>
             <div>

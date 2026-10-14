@@ -15,6 +15,7 @@ set "ROOT=%~dp0"
 set "API=%ROOT%apps\api"
 set "WEB=%ROOT%apps\web"
 set "ENGINE=%ROOT%apps\ast-engine"
+set "WORKER=%ROOT%apps\queue-worker"
 
 if /I "%~1"=="stop" goto :stop
 
@@ -71,13 +72,16 @@ if "%DOSETUP%"=="1" (
     )
 )
 
-REM ---- 4. Khoi dong 3 dich vu, moi dich vu mot cua so rieng ----
+REM ---- 4. Khoi dong 4 dich vu, moi dich vu mot cua so rieng ----
 echo.
 echo [START] AST Engine  - cong 8000
 start "AITA Engine (8000)" /D "%ENGINE%" cmd /k python -m uvicorn ast_engine.main:app --app-dir src --port 8000
 
 echo [START] Backend API - cong 5000
 start "AITA Backend (5000)" /D "%API%" cmd /k npm run dev
+
+echo [START] Queue Worker (BullMQ)
+start "AITA Queue Worker" /D "%WORKER%" cmd /k npm run dev
 
 echo [START] Frontend    - cong 3000
 start "AITA Frontend (3000)" /D "%WEB%" cmd /k npm run dev
@@ -89,9 +93,10 @@ timeout /t 15 /nobreak >nul
 
 echo.
 echo ------------------------------------------------------------
-echo  Frontend : http://localhost:3000
-echo  Backend  : http://localhost:5000/health
-echo  Engine   : http://localhost:8000/docs
+echo  Frontend     : http://localhost:3000
+echo  Backend API  : http://localhost:5000/health
+echo  AST Engine   : http://localhost:8000/docs
+echo  Queue Worker : (BullMQ background process)
 echo ------------------------------------------------------------
 echo  Kiem tra nhanh:
 curl.exe -s -o nul -w "  Engine  : HTTP %%{http_code}\n" http://localhost:8000/health
@@ -99,7 +104,7 @@ curl.exe -s -o nul -w "  Backend : HTTP %%{http_code}\n" http://localhost:5000/h
 curl.exe -s -o nul -w "  Frontend: HTTP %%{http_code}\n" http://localhost:3000
 echo.
 echo  HTTP 200 la dich vu da san sang. Neu la 000 thi xem cua so dich vu do de biet loi.
-echo  Dong cac dich vu: chay "startup.bat stop" hoac dong 3 cua so.
+echo  Dong cac dich vu: chay "startup.bat stop" hoac dong 4 cua so.
 echo.
 start "" http://localhost:3000
 goto :eof
@@ -108,6 +113,7 @@ goto :eof
 echo Dang dong cac cua so dich vu ...
 taskkill /FI "WINDOWTITLE eq AITA Engine (8000)*"   /T /F >nul 2>nul
 taskkill /FI "WINDOWTITLE eq AITA Backend (5000)*"  /T /F >nul 2>nul
+taskkill /FI "WINDOWTITLE eq AITA Queue Worker*"    /T /F >nul 2>nul
 taskkill /FI "WINDOWTITLE eq AITA Frontend (3000)*" /T /F >nul 2>nul
 echo Xong.
 goto :eof
