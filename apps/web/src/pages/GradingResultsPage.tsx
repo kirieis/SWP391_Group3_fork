@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   AlertCircle,
   Clock,
+  XCircle,
   Loader2,
   X,
 } from 'lucide-react';
@@ -33,6 +34,15 @@ interface PlagiarismMatch {
   [key: string]: unknown;
 }
 
+interface TestCaseResult {
+  testCaseId?: string;
+  passed: boolean;
+  actualOutput?: string;
+  expectedOutput?: string;
+  durationMs?: number;
+  error?: string;
+}
+
 // Kiểu bài nộp từ backend
 interface SubmissionData {
   id?: string;
@@ -40,6 +50,7 @@ interface SubmissionData {
   astCheckStatus?: string;
   totalScore?: number | null;
   aiFeedback?: string | null;
+  testResults?: TestCaseResult[];
   assignment?: {
     testCases?: TestCaseItem[];
     [key: string]: unknown;
@@ -88,7 +99,7 @@ export default function GradingResultsPage() {
 
     // Tự động polling cập nhật mỗi 3 giây nếu bài nộp vẫn đang PENDING
     const interval = setInterval(() => {
-      if (submission?.astCheckStatus === 'PENDING' || submission?.status === 'PENDING' || submission?.status === 'RUNNING') {
+      if (submission?.astCheckStatus === 'PENDING' || ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '')) {
         loadSubmission(false);
       }
     }, 3000);
@@ -139,6 +150,9 @@ export default function GradingResultsPage() {
 
   // Lấy test cases thật từ assignment trong kết quả backend (KHÔNG DÙNG FAKE FALLBACK)
   const testCases: TestCaseItem[] = submission?.assignment?.testCases || [];
+  const testResults: TestCaseResult[] = Array.isArray(submission?.testResults) ? submission.testResults : [];
+  const getTestResult = (tc: TestCaseItem, index: number) =>
+    (tc.id ? testResults.find((result) => result.testCaseId === tc.id) : undefined) ?? testResults[index];
 
   // Tính tỷ lệ đạo văn từ kết quả Plagiarism Matches thật
   const allMatches = [
@@ -366,7 +380,7 @@ export default function GradingResultsPage() {
                   {isScoreWithheld ? (
                     <span className="text-xs text-rose-600 font-semibold">Tạm giữ điểm</span>
                   ) : submission?.totalScore !== null && submission?.totalScore !== undefined ? (
-                    `${submission.totalScore} / 100`
+                    `${Number(submission.totalScore).toFixed(1)} / 10`
                   ) : (
                     'Chờ Sandbox'
                   )}
@@ -379,27 +393,45 @@ export default function GradingResultsPage() {
                 </div>
               ) : (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {testCases.map((tc: TestCaseItem, index: number) => (
-                    <div key={tc.id || index} className="border border-slate-200 rounded-xl overflow-hidden text-xs">
-                      <div
-                        onClick={() => setExpandedTestCase(expandedTestCase === index ? null : index)}
-                        className="p-3 bg-slate-50 hover:bg-slate-100 cursor-pointer flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 size={14} className="text-emerald-600" />
-                          <span className="text-slate-800 font-medium">Test Case #{index + 1}</span>
-                        </div>
-                        {expandedTestCase === index ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </div>
+                  {testCases.map((tc: TestCaseItem, index: number) => {
+                    const result = getTestResult(tc, index);
+                    const passed = result?.passed === true;
+                    const failed = result?.passed === false;
+                    return (
+                      <div key={tc.id || index} className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedTestCase(expandedTestCase === index ? null : index)}
+                          className="w-full p-3 bg-slate-50 hover:bg-slate-100 text-left flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {passed ? (
+                              <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                            ) : failed ? (
+                              <XCircle size={14} className="text-rose-600 shrink-0" />
+                            ) : (
+                              <Clock size={14} className="text-slate-400 shrink-0" />
+                            )}
+                            <span className="text-slate-800 font-medium">Test Case #{index + 1}</span>
+                            <span className={`font-semibold ${passed ? 'text-emerald-700' : failed ? 'text-rose-700' : 'text-slate-500'}`}>
+                              {passed ? 'PASS' : failed ? 'FAIL' : isPending ? 'Đang chạy' : 'Không có dữ liệu'}
+                            </span>
+                          </div>
+                          {expandedTestCase === index ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
 
-                      {expandedTestCase === index && (
-                        <div className="p-3 bg-white font-mono text-[11px] space-y-1 text-slate-600 border-t border-slate-200">
-                          <p><span className="text-slate-400">StdIn:</span> {tc.inputData || '(Không có)'}</p>
-                          <p><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(Không có)'}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        {expandedTestCase === index && (
+                          <div className="p-3 bg-white font-mono text-[11px] space-y-2 text-slate-600 border-t border-slate-200 break-words">
+                            <p><span className="text-slate-400">Input:</span> {tc.inputData || '(Không có)'}</p>
+                            <p><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(Không có)'}</p>
+                            {result && <p><span className="text-slate-400">Actual:</span> {result.actualOutput || '(Output rỗng)'}</p>}
+                            {result?.error && <p className="text-rose-700"><span className="text-rose-500">Lỗi:</span> {result.error}</p>}
+                            {result?.durationMs !== undefined && <p><span className="text-slate-400">Thời gian:</span> {result.durationMs} ms</p>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -496,7 +528,7 @@ export default function GradingResultsPage() {
               {isScoreWithheld
                 ? '---'
                 : submission?.totalScore !== null && submission?.totalScore !== undefined
-                ? (submission.totalScore / 10).toFixed(1)
+                ? Number(submission.totalScore).toFixed(1)
                 : '---'}
             </div>
             <div>

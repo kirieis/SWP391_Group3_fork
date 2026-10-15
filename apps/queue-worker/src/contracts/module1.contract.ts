@@ -1,4 +1,5 @@
 import type { SubmissionStatus, GradingStep } from "./status.contract.js";
+import type { SandboxTestCaseResult } from "./sandbox.contract.js";
 
 export type { SubmissionStatus, GradingStep };
 
@@ -18,6 +19,8 @@ export interface Module1CallbackBody {
   message: string;
   /** Only sent on final GRADED/terminal status */
   totalScore?: number;
+  /** Results per sandbox test case, persisted for the grading page. */
+  testResults?: SandboxTestCaseResult[];
   /** GenAI review feedback (Milestone 3) */
   aiFeedback?: string;
   aiCleanCodeScore?: number;

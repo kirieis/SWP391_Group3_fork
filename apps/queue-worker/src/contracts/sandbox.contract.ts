@@ -26,6 +26,15 @@ export const TERMINAL_OUTCOMES: ReadonlySet<SandboxOutcome> = new Set([
   "COMPILATION_ERROR",
 ]);
 
+export interface SandboxTestCaseResult {
+  testCaseId?: string;
+  passed: boolean;
+  actualOutput: string;
+  expectedOutput: string;
+  durationMs: number;
+  error?: string;
+}
+
 export interface SandboxResponse {
   outcome: SandboxOutcome;
   /** Number of test cases passed */
@@ -38,6 +47,8 @@ export interface SandboxResponse {
   output?: string;
   /** Error message if applicable */
   errorMessage?: string;
+  /** Per-test execution details returned by the Sandbox Engine. */
+  testResults?: SandboxTestCaseResult[];
 }
 
 /**

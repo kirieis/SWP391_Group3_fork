@@ -93,7 +93,7 @@ export class ExecutionService {
    */
   private async fetchTestCasesFromGateway(assignmentId: string): Promise<TestCaseInput[]> {
     try {
-      const url = `${config.CORE_API_URL}/api/assignments/${assignmentId}`;
+      const url = `${config.CORE_API_URL}/api/assignments/internal/${assignmentId}`;
       const response = await fetch(url, {
         headers: {
           'x-internal-key': config.CORE_API_KEY
