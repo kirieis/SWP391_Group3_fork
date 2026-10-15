@@ -1,11 +1,14 @@
 import { Router } from "express";
-import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignments } from "../controllers/assignment.controller.js";
-import { authenticateJWT, authorizeRole } from "../middlewares/auth.middleware.js";
+import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments } from "../controllers/assignment.controller.js";
+import { authenticateJWT, authorizeRole, requireInternalApiKey } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 // Lấy danh sách bài tập (Sinh viên/Giảng viên)
 router.get("/", authenticateJWT, getAssignments);
+
+// Sandbox Engine chỉ được đọc test case qua Internal API Key.
+router.get("/internal/:assignmentId", requireInternalApiKey, getAssignmentForSandbox);
 
 // Xem chi tiết đề bài (Ai đã đăng nhập đều xem được)
 router.get("/:assignmentId", authenticateJWT, getAssignmentDetail);

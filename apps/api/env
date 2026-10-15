@@ -1,0 +1,22 @@
+# ==============================================================================
+# CẤU HÌNH BIẾN MÔI TRƯỜNG DỰ ÁN AITA-INTELLIGENT (apps/api/.env)
+# QUAN TRỌNG: File này KHÔNG được commit lên Git (đã có trong .gitignore)
+# ==============================================================================
+
+# Cổng mạng (Port) mà server Express backend sẽ lắng nghe
+PORT=5000
+
+# Chuỗi kết nối đến cơ sở dữ liệu MSSQL (SQL Server)
+# Instance: L-Y7000\SQLMS — đã cấu hình fixed port 1433 qua SQL Server Configuration Manager
+DATABASE_URL="sqlserver://localhost:1433;database=aita_db;user=sa;password=12345;trustServerCertificate=true"
+
+# Khóa bí mật để ký JWT Token (đổi sang chuỗi ngẫu nhiên dài khi deploy thật)
+JWT_SECRET="aita_jwt_super_secret_key_change_in_production"
+
+GOOGLE_CLIENT_ID="216808132511-nrvf3ehsap42jn3g6v47s6fl2gp2jjb0.apps.googleusercontent.com"
+
+# AST Engine URL (Phân hệ 4)
+AST_ENGINE_URL="http://localhost:8000"
+
+# Khóa nội bộ giữa Gateway và Worker/Internal APIs
+INTERNAL_API_KEY="dev_internal_key"

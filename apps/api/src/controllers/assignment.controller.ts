@@ -130,6 +130,38 @@ export const getAssignmentDetail = async (req: Request, res: Response) => {
     }
 };
 
+
+// Endpoint nội bộ cho Sandbox Engine: chỉ trả dữ liệu cần để chạy test case.
+export const getAssignmentForSandbox = async (req: Request, res: Response) => {
+    try {
+        const { assignmentId } = req.params;
+        const assignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            select: {
+                id: true,
+                language: true,
+                testCases: {
+                    select: {
+                        id: true,
+                        inputData: true,
+                        expectedOutput: true,
+                        scoreWeight: true,
+                    },
+                },
+            },
+        });
+
+        if (!assignment) {
+            return res.status(404).json({ success: false, message: "Không tìm thấy bài tập." });
+        }
+
+        return res.json({ success: true, data: assignment });
+    } catch (error) {
+        console.error("Lỗi getAssignmentForSandbox:", error);
+        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy test case." });
+    }
+};
+
 // 4. Lấy danh sách bài tập theo lớp (hoặc tất cả bài tập sinh viên/giảng viên được xem)
 export const getAssignments = async (req: Request, res: Response) => {
     try {

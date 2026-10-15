@@ -20,6 +20,7 @@ import {
   Plus,
   Trash2,
   GraduationCap,
+  Sparkles,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { LEVEL_STYLE, resolveLevel } from '../features/plagiarism/level';
@@ -145,6 +146,10 @@ export default function LecturerDashboardPage() {
   ]);
   const [creatingAssignment, setCreatingAssignment] = useState<boolean>(false);
   const [createAssignmentError, setCreateAssignmentError] = useState<string>('');
+  const [generationTopic, setGenerationTopic] = useState<string>('');
+  const [generationDifficulty, setGenerationDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [generatingAssignment, setGeneratingAssignment] = useState<boolean>(false);
+  const [generationNotice, setGenerationNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // loadClasses, loadPendingAppeals được khai báo bên dưới; useEffect gọi chúng sau khi JSX đã sẵn sàng
 
@@ -167,7 +172,7 @@ export default function LecturerDashboardPage() {
     setResolveStatus(defaultStatus);
     setResolveFeedback('');
     const currentScore =
-      appeal.submission?.totalScore != null ? (appeal.submission.totalScore / 10).toString() : '';
+      appeal.submission?.totalScore != null ? Number(appeal.submission.totalScore).toFixed(1) : '';
     setResolveNewScore(currentScore);
     setResolveError('');
   };
@@ -181,7 +186,7 @@ export default function LecturerDashboardPage() {
     if (resolveNewScore.trim() !== '') {
       const num = parseFloat(resolveNewScore);
       if (!isNaN(num)) {
-        parsedScore = Math.round(num * 10);
+        parsedScore = Math.round(num * 10) / 10;
       }
     }
 
@@ -353,6 +358,66 @@ export default function LecturerDashboardPage() {
     } else {
       setImportMessage({ type: 'error', text: res.message || 'Import thất bại (Toàn bộ đã được Rollback).' });
     }
+  };
+
+  // Sinh bản nháp bằng AI. Giảng viên vẫn phải rà soát và bấm Tạo đề bài để lưu.
+  const handleGenerateAssignment = async () => {
+    const topic = generationTopic.trim();
+    if (!topic) {
+      setGenerationNotice({ type: 'error', text: 'Vui lòng nhập chủ đề trước khi yêu cầu AI sinh đề.' });
+      return;
+    }
+
+    setGeneratingAssignment(true);
+    setGenerationNotice(null);
+    setCreateAssignmentError('');
+    const res = await apiRequest<{
+      title: string;
+      description: string;
+      testCases: Array<{ input?: string; inputData?: string; expectedOutput?: string; scoreWeight?: number; label?: string }>;
+    }>('/assignments/generate', {
+      method: 'POST',
+      body: JSON.stringify({ topic, language: newLanguage, difficulty: generationDifficulty }),
+    });
+    setGeneratingAssignment(false);
+
+    if (!res.success || !res.data) {
+      setGenerationNotice({ type: 'error', text: res.message || 'AI chưa thể sinh đề. Vui lòng thử lại.' });
+      return;
+    }
+
+    const generatedCases = Array.isArray(res.data.testCases) ? res.data.testCases : [];
+    if (!res.data.title?.trim() || !res.data.description?.trim() || generatedCases.length === 0) {
+      setGenerationNotice({ type: 'error', text: 'AI trả về đề chưa đầy đủ. Hãy thử lại hoặc nhập đề thủ công.' });
+      return;
+    }
+
+    const rawWeights = generatedCases.map((tc) => {
+      const value = Number(tc.scoreWeight);
+      return Number.isFinite(value) && value > 0 ? value : 1;
+    });
+    const totalWeight = rawWeights.reduce((sum, value) => sum + value, 0);
+    const mappedCases = generatedCases.map((tc, index) => ({
+      inputData: String(tc.input ?? tc.inputData ?? ''),
+      expectedOutput: String(tc.expectedOutput ?? ''),
+      scoreWeight: Math.max(1, Math.floor((rawWeights[index] / totalWeight) * 100)),
+    }));
+    // Phân bổ phần dư cho case cuối, đồng thời tránh trọng số âm khi AI trả trọng số lệch.
+    let difference = 100 - mappedCases.reduce((sum, tc) => sum + tc.scoreWeight, 0);
+    while (difference < 0) {
+      const candidate = mappedCases
+        .map((tc, index) => ({ index, weight: tc.scoreWeight }))
+        .filter((entry) => entry.weight > 1)
+        .sort((a, b) => b.weight - a.weight)[0];
+      if (!candidate) break;
+      mappedCases[candidate.index].scoreWeight -= 1;
+      difference += 1;
+    }
+    if (difference > 0) mappedCases[mappedCases.length - 1].scoreWeight += difference;
+    setNewTitle(res.data.title.trim());
+    setNewDescription(res.data.description.trim());
+    setTestCases(mappedCases);
+    setGenerationNotice({ type: 'success', text: `Đã sinh bản nháp gồm ${mappedCases.length} test case. Hãy kiểm tra kỹ input/output trước khi lưu.` });
   };
 
   // 4. Xử lý Tạo Assignment Mới Thật qua POST /assignments
@@ -878,7 +943,7 @@ export default function LecturerDashboardPage() {
                   const assignmentTitle = appeal.submission?.assignment?.title || 'Bài tập';
                   const currentScore =
                     appeal.submission?.totalScore != null
-                      ? (appeal.submission.totalScore / 10).toFixed(1)
+                      ? Number(appeal.submission.totalScore).toFixed(1)
                       : 'Chưa có';
                   const dateStr = appeal.createdAt
                     ? new Date(appeal.createdAt).toLocaleString('vi-VN')
@@ -1107,6 +1172,49 @@ export default function LecturerDashboardPage() {
             </div>
 
             <div className="space-y-3 text-xs">
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
+                <div className="flex items-center gap-2 font-semibold text-indigo-900">
+                  <Sparkles size={15} />
+                  <span>AI hỗ trợ sinh đề bài</span>
+                </div>
+                <label className="font-medium text-slate-700 block">Chủ đề / yêu cầu đề bài:</label>
+                <textarea
+                  rows={2}
+                  value={generationTopic}
+                  onChange={(e) => setGenerationTopic(e.target.value)}
+                  maxLength={500}
+                  placeholder="Ví dụ: Viết chương trình quản lý danh sách sinh viên bằng OOP, tìm kiếm theo mã sinh viên..."
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 resize-y"
+                />
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={generationDifficulty}
+                    onChange={(e) => setGenerationDifficulty(e.target.value as 'easy' | 'medium' | 'hard')}
+                    className="sm:w-36 bg-white border border-slate-200 rounded-xl p-2.5 outline-none"
+                    aria-label="Độ khó đề bài do AI sinh"
+                  >
+                    <option value="easy">Dễ</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="hard">Khó</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={generatingAssignment || creatingAssignment}
+                    onClick={handleGenerateAssignment}
+                    className="flex-1 px-3 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {generatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    {generatingAssignment ? 'AI đang sinh đề...' : 'Sinh đề bằng AI'}
+                  </button>
+                </div>
+                {generationNotice && (
+                  <div className={`p-2.5 rounded-xl border flex items-start gap-2 ${generationNotice.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                    {generationNotice.type === 'success' ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
+                    <span>{generationNotice.text}</span>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="font-medium text-slate-700 block mb-1">Tiêu đề bài tập (*):</label>
                 <input
@@ -1276,7 +1384,7 @@ export default function LecturerDashboardPage() {
             <div className="text-xs text-slate-600 space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60">
               <p>Sinh viên: <strong className="text-slate-800">{resolveModalAppeal.student?.user?.fullName || 'Sinh viên'}</strong> ({resolveModalAppeal.student?.studentCode || 'N/A'})</p>
               <p>Bài tập: <strong className="text-slate-800">{resolveModalAppeal.submission?.assignment?.title || 'Bài tập'}</strong></p>
-              <p>Điểm hiện tại: <strong className="text-indigo-600">{resolveModalAppeal.submission?.totalScore != null ? (resolveModalAppeal.submission.totalScore / 10).toFixed(1) : 'Chưa có'}</strong></p>
+              <p>Điểm hiện tại: <strong className="text-indigo-600">{resolveModalAppeal.submission?.totalScore != null ? Number(resolveModalAppeal.submission.totalScore).toFixed(1) : 'Chưa có'}</strong></p>
               <div className="pt-1.5 border-t border-slate-200/60">
                 <span className="text-slate-500 font-medium block mb-0.5">Lý do khiếu nại:</span>
                 <p className="text-[11px] text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200/60 italic leading-relaxed">
