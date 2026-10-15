@@ -103,9 +103,7 @@ export default function GradingResultsPage() {
       if (
         !submission ||
         submission?.astCheckStatus === 'PENDING' ||
-        submission?.status === 'PENDING' ||
-        submission?.status === 'RUNNING' ||
-        submission?.status === 'RUNNING_TESTS'
+        ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '')
       ) {
 =======
       if (submission?.astCheckStatus === 'PENDING' || ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '')) {
@@ -381,11 +379,15 @@ export default function GradingResultsPage() {
                   {isScoreWithheld ? (
                     <span className="text-xs text-rose-600 font-semibold">Tạm giữ điểm</span>
                   ) : submission?.totalScore !== null && submission?.totalScore !== undefined ? (
+<<<<<<< Updated upstream
 <<<<<<< HEAD
                     `${(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)} / 10`
 =======
                     `${Number(submission.totalScore).toFixed(1)} / 10`
 >>>>>>> 62df7651041695ebc9f399bb9713021ebc5f0a72
+=======
+                    `${Number(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)} / 10`
+>>>>>>> Stashed changes
                   ) : (
                     'Chờ Sandbox'
                   )}
@@ -532,8 +534,12 @@ export default function GradingResultsPage() {
               {isScoreWithheld
                 ? '---'
                 : submission?.totalScore !== null && submission?.totalScore !== undefined
+<<<<<<< Updated upstream
 <<<<<<< HEAD
                   ? (submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
+=======
+                  ? Number(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
+>>>>>>> Stashed changes
                   : '---'}
 =======
                 ? Number(submission.totalScore).toFixed(1)
