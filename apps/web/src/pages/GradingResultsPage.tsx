@@ -133,9 +133,7 @@ export default function GradingResultsPage() {
     }
   };
 
-  // isPending = còn đang trong pipeline chấm (hiển thị spinner)
-  const TERMINAL_STATUSES = ['COMPLETED', 'SCORE_WITHHELD', 'GRADED', 'AI_REVIEW_PENDING', 'COMPILATION_ERROR', 'TIMEOUT', 'SECURITY_VIOLATION', 'FAILED'];
-  const isPending = !submission || (!TERMINAL_STATUSES.includes(submission.status || '') && submission.astCheckStatus === 'PENDING') || submission.status === 'PENDING' || submission.status === 'RUNNING' || submission.status === 'RUNNING_TESTS';
+  const isPending = !submission || submission.astCheckStatus === 'PENDING' || submission.status === 'PENDING' || submission.status === 'RUNNING';
   const isScoreWithheld = submission?.status === 'SCORE_WITHHELD';
 
   // Lấy test cases thật từ assignment trong kết quả backend (KHÔNG DÙNG FAKE FALLBACK)
@@ -154,6 +152,13 @@ export default function GradingResultsPage() {
   // Đánh giá AI thật (nếu có từ aiFeedback)
   const hasAiFeedback = Boolean(submission?.aiFeedback && String(submission.aiFeedback).trim().length > 0);
 
+  const isGradedOrComplete =
+    submission?.status === 'COMPLETED' ||
+    submission?.status === 'GRADED' ||
+    submission?.status === 'AI_REVIEW_PENDING' ||
+    submission?.status === 'SCORE_WITHHELD' ||
+    (submission?.totalScore !== null && submission?.totalScore !== undefined);
+
   // Kiểm tra từng bước tiến trình thực tế (Stepper) dựa trên dữ liệu thật của backend
   const stepStates = [
     {
@@ -165,42 +170,34 @@ export default function GradingResultsPage() {
       label: 'Building',
       desc: 'Môi trường Docker',
       status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' ||
-        submission?.status === 'GRADED' || submission?.status === 'AI_REVIEW_PENDING' ||
-        submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' ||
-        submission?.status === 'SECURITY_VIOLATION' ||
-        (submission?.totalScore !== null && submission?.totalScore !== undefined)
+        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
           ? 'DONE'
-          : submission?.status === 'RUNNING' || submission?.status === 'RUNNING_TESTS'
-          ? 'ACTIVE'
-          : 'NEUTRAL',
+          : submission?.status === 'RUNNING'
+            ? 'ACTIVE'
+            : 'NEUTRAL',
     },
     {
       label: 'Running Tests',
       desc: 'Sandbox kiểm thử',
       status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' ||
-        submission?.status === 'GRADED' || submission?.status === 'AI_REVIEW_PENDING' ||
-        submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' ||
-        submission?.status === 'SECURITY_VIOLATION' ||
-        (submission?.totalScore !== null && submission?.totalScore !== undefined)
+        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
           ? 'DONE'
-          : submission?.status === 'RUNNING' || submission?.status === 'RUNNING_TESTS'
-          ? 'ACTIVE'
-          : 'NEUTRAL',
+          : submission?.status === 'RUNNING'
+            ? 'ACTIVE'
+            : 'NEUTRAL',
     },
     {
       label: 'AST Analysis',
       desc: 'Winnowing AST',
       status:
         submission?.astCheckStatus === 'DONE' || submission?.astCheckStatus === 'NEEDS_REVIEW' ||
-        ((submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD') && submission?.astCheckStatus !== 'FAILED')
+          ((submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD') && submission?.astCheckStatus !== 'FAILED')
           ? 'DONE'
           : submission?.astCheckStatus === 'PENDING'
-          ? 'ACTIVE'
-          : submission?.astCheckStatus === 'FAILED'
-          ? 'FAILED'
-          : 'NEUTRAL',
+            ? 'ACTIVE'
+            : submission?.astCheckStatus === 'FAILED'
+              ? 'FAILED'
+              : 'NEUTRAL',
     },
     {
       label: 'AI Review',
@@ -211,14 +208,11 @@ export default function GradingResultsPage() {
       label: 'Complete',
       desc: isScoreWithheld ? 'Giữ điểm' : 'Hoàn tất',
       status:
-        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' ||
-        submission?.status === 'GRADED' || submission?.status === 'AI_REVIEW_PENDING' ||
-        submission?.status === 'COMPILATION_ERROR' || submission?.status === 'TIMEOUT' ||
-        submission?.status === 'SECURITY_VIOLATION'
+        submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD'
           ? 'DONE'
           : submission?.status === 'FAILED'
-          ? 'FAILED'
-          : 'NEUTRAL',
+            ? 'FAILED'
+            : 'NEUTRAL',
     },
   ];
 
@@ -330,15 +324,14 @@ export default function GradingResultsPage() {
               return (
                 <div
                   key={step.label}
-                  className={`p-3 rounded-xl border flex flex-col items-center text-center transition ${
-                    isDone
+                  className={`p-3 rounded-xl border flex flex-col items-center text-center transition ${isDone
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                       : isActive
-                      ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
-                      : isFailed
-                      ? 'bg-rose-50 border-rose-200 text-rose-700'
-                      : 'bg-slate-50 border-slate-200 text-slate-400'
-                  }`}
+                        ? 'bg-amber-50 border-amber-300 text-amber-700 animate-pulse'
+                        : isFailed
+                          ? 'bg-rose-50 border-rose-200 text-rose-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-400'
+                    }`}
                 >
                   <div className="mb-2">
                     {isDone ? (
@@ -469,9 +462,8 @@ export default function GradingResultsPage() {
               <div className="flex flex-col items-center justify-center my-4">
                 <div className="relative w-36 h-36 flex items-center justify-center">
                   <div
-                    className={`w-32 h-32 rounded-full border-8 border-slate-100 flex items-center justify-center ${
-                      LEVEL_STYLE[plagLevel].ring
-                    }`}
+                    className={`w-32 h-32 rounded-full border-8 border-slate-100 flex items-center justify-center ${LEVEL_STYLE[plagLevel].ring
+                      }`}
                   >
                     <div className="text-center">
                       <span className="text-3xl font-extrabold text-slate-900">{maxSimilarity.toFixed(1)}%</span>
@@ -490,8 +482,8 @@ export default function GradingResultsPage() {
                 {plagLevel === 'DANGER'
                   ? 'Phát hiện tương đồng cấu trúc cây cú pháp cao với bài nộp khác.'
                   : plagLevel === 'WARNING'
-                  ? 'Có một số đoạn tương đồng cấu trúc cú pháp, giảng viên có thể xem lại.'
-                  : 'Không phát hiện trùng lặp đáng kể với các bài nộp khác.'}
+                    ? 'Có một số đoạn tương đồng cấu trúc cú pháp, giảng viên có thể xem lại.'
+                    : 'Không phát hiện trùng lặp đáng kể với các bài nộp khác.'}
               </p>
             </div>
             <p className="text-[11px] text-slate-400 mt-4 text-center">Winnowing k-gram = 15, window = 25 (Phân hệ 4)</p>
@@ -505,8 +497,8 @@ export default function GradingResultsPage() {
               {isScoreWithheld
                 ? '---'
                 : submission?.totalScore !== null && submission?.totalScore !== undefined
-                ? (submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
-                : '---'}
+                  ? (submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
+                  : '---'}
             </div>
             <div>
               <p className="text-xs text-slate-500">Tổng điểm chính thức (Thang 10)</p>
@@ -514,8 +506,8 @@ export default function GradingResultsPage() {
                 {isScoreWithheld
                   ? 'TẠM GIỮ ĐIỂM ĐỐI CHIẾU'
                   : submission?.totalScore !== null && submission?.totalScore !== undefined
-                  ? 'ĐÃ CÓ KẾT QUẢ'
-                  : 'ĐANG CHỜ CHẤM ĐIỂM'}
+                    ? 'ĐÃ CÓ KẾT QUẢ'
+                    : 'ĐANG CHỜ CHẤM ĐIỂM'}
               </h4>
             </div>
           </div>
