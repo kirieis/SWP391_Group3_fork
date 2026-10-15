@@ -114,9 +114,33 @@ export const importStudentsFromExcel = async (req: Request, res: Response) => {
         const studentsToEnroll: { email: string; studentCode: string; fullName: string }[] = [];
 
         for (const [index, row] of rows.entries()) {
-            const email = (row["Email"] || row["email"] || "").toString().trim().toLowerCase();
-            const studentCode = (row["StudentCode"] || row["MSSV"] || row["mssv"] || row["student_code"] || "").toString().trim().toUpperCase();
-            const fullName = (row["FullName"] || row["HoTen"] || row["full_name"] || email.split("@")[0]).toString().trim();
+            // Chuẩn hóa tất cả các key trong row về dạng chữ thường không dấu cách
+            const normalizedRow: Record<string, any> = {};
+            for (const key of Object.keys(row)) {
+                const cleanKey = key.trim().toLowerCase().replace(/[\s_-]+/g, "");
+                normalizedRow[cleanKey] = row[key];
+            }
+
+            const email = (
+                normalizedRow["email"] ||
+                normalizedRow["mail"] ||
+                ""
+            ).toString().trim().toLowerCase();
+
+            const studentCode = (
+                normalizedRow["studentcode"] ||
+                normalizedRow["mssv"] ||
+                normalizedRow["masv"] ||
+                normalizedRow["code"] ||
+                ""
+            ).toString().trim().toUpperCase();
+
+            const fullName = (
+                normalizedRow["fullname"] ||
+                normalizedRow["hoten"] ||
+                normalizedRow["name"] ||
+                (email ? email.split("@")[0] : "")
+            ).toString().trim();
 
             if (!email || !studentCode) {
                 return res.status(400).json({
