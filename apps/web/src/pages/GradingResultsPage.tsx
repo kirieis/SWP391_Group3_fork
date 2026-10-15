@@ -99,15 +99,11 @@ export default function GradingResultsPage() {
 
     // Tự động polling cập nhật mỗi 2 giây nếu bài nộp chưa có hoặc vẫn đang trong tiến trình chấm
     const interval = setInterval(() => {
-<<<<<<< HEAD
       if (
         !submission ||
         submission?.astCheckStatus === 'PENDING' ||
         ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '')
       ) {
-=======
-      if (submission?.astCheckStatus === 'PENDING' || ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '')) {
->>>>>>> 62df7651041695ebc9f399bb9713021ebc5f0a72
         loadSubmission(false);
       }
     }, 2000);
@@ -379,15 +375,7 @@ export default function GradingResultsPage() {
                   {isScoreWithheld ? (
                     <span className="text-xs text-rose-600 font-semibold">Tạm giữ điểm</span>
                   ) : submission?.totalScore !== null && submission?.totalScore !== undefined ? (
-<<<<<<< Updated upstream
-<<<<<<< HEAD
-                    `${(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)} / 10`
-=======
-                    `${Number(submission.totalScore).toFixed(1)} / 10`
->>>>>>> 62df7651041695ebc9f399bb9713021ebc5f0a72
-=======
                     `${Number(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)} / 10`
->>>>>>> Stashed changes
                   ) : (
                     'Chờ Sandbox'
                   )}
@@ -534,17 +522,8 @@ export default function GradingResultsPage() {
               {isScoreWithheld
                 ? '---'
                 : submission?.totalScore !== null && submission?.totalScore !== undefined
-<<<<<<< Updated upstream
-<<<<<<< HEAD
-                  ? (submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
-=======
                   ? Number(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)
->>>>>>> Stashed changes
                   : '---'}
-=======
-                ? Number(submission.totalScore).toFixed(1)
-                : '---'}
->>>>>>> 62df7651041695ebc9f399bb9713021ebc5f0a72
             </div>
             <div>
               <p className="text-xs text-slate-500">Tổng điểm chính thức (Thang 10)</p>
