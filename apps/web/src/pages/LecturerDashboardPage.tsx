@@ -1272,13 +1272,16 @@ export default function LecturerDashboardPage() {
               </div>
 
               <div>
-                <label className="font-medium text-slate-700 block mb-1">Assignment description:</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-medium text-slate-700">Assignment description (*):</label>
+                  <span className="text-[11px] text-slate-400">Detailed requirements for students</span>
+                </div>
                 <textarea
-                  rows={2}
-                  placeholder="Describe the problem requirements..."
+                  rows={4}
+                  placeholder="Describe the problem requirements, input/output formats, and constraints..."
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 text-xs leading-relaxed resize-y font-normal"
                 />
               </div>
 

@@ -95,6 +95,9 @@ it("buildAssignmentGenerationPrompt sinh prompt với jsonMode và mức độ k
   const prompt = buildAssignmentGenerationPrompt("Binary Search Tree", "Java", "hard");
 
   assert(prompt.systemPrompt.includes("programming instructor"), "System prompt cho giảng viên");
+  assert(prompt.systemPrompt.includes("Problem Statement & Background"), "System prompt yêu cầu Problem Statement");
+  assert(prompt.systemPrompt.includes("Input / Output Format Specification"), "System prompt yêu cầu I/O Format");
+  assert(prompt.systemPrompt.includes("Constraints & Edge Cases"), "System prompt yêu cầu Constraints");
   assert(prompt.userPrompt.includes("hard-level"), "Đúng mức độ khó");
   assert(prompt.userPrompt.includes("Binary Search Tree"), "Đúng chủ đề");
   assert.equal(prompt.temperature, 0.6, "Temperature phải là 0.6");

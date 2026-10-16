@@ -43,6 +43,20 @@ export class GeminiProvider extends BaseProvider {
    * Gemini request format: system_instruction + contents (khác OpenAI messages).
    */
   protected buildRequestBody(request: AIRequest): Record<string, unknown> {
+    const config: Record<string, unknown> = {
+      maxOutputTokens: request.maxTokens ? Math.max(request.maxTokens, 4096) : 4096,
+      temperature: request.temperature ?? 0.2,
+      ...(request.jsonMode ? { responseMimeType: "application/json" } : {}),
+    };
+
+    // Gemini 2.5-flash uses 'thinking' tokens which consume maxOutputTokens.
+    // Set thinkingBudget to 512 to ensure sufficient room for actual output JSON.
+    if (this.model.includes("2.5")) {
+      config.thinkingConfig = {
+        thinkingBudget: 512,
+      };
+    }
+
     return {
       system_instruction: {
         parts: [{ text: request.systemPrompt }],
@@ -53,11 +67,7 @@ export class GeminiProvider extends BaseProvider {
           parts: [{ text: request.userPrompt }],
         },
       ],
-      generationConfig: {
-        maxOutputTokens: request.maxTokens ?? 2048,
-        temperature: request.temperature ?? 0.2,
-        ...(request.jsonMode ? { responseMimeType: "application/json" } : {}),
-      },
+      generationConfig: config,
     };
   }
 

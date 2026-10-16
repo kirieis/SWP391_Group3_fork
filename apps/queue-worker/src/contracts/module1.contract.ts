@@ -1,9 +1,7 @@
-import type { SubmissionStatus, GradingStep, AssignmentDeadlineStatus } from "./status.contract.js";
+import type { SubmissionStatus, GradingStep } from "./status.contract.js";
 import type { SandboxTestCaseResult } from "./sandbox.contract.js";
-export * from "./assignment.contract.js";
 
-export type { SubmissionStatus, GradingStep, AssignmentDeadlineStatus };
-
+export type { SubmissionStatus, GradingStep };
 
 /**
  * Module 1 (API Gateway) callback contract.

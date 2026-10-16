@@ -373,7 +373,15 @@ export default function GradingResultsPage() {
                   </div>
                   <h3 className="font-semibold text-slate-900 text-sm">Sandbox test case grading</h3>
                 </div>
-                <span className="text-base font-bold text-emerald-600">
+                <span className={`text-base font-bold ${
+                  submission?.totalScore !== null && submission?.totalScore !== undefined
+                    ? Number(submission.totalScore) >= 5.0
+                      ? 'text-emerald-600'
+                      : Number(submission.totalScore) === 0
+                      ? 'text-rose-600'
+                      : 'text-amber-600'
+                    : 'text-emerald-600'
+                }`}>
                   {isScoreWithheld ? (
                     <span className="text-xs text-rose-600 font-semibold">Score withheld</span>
                   ) : submission?.totalScore !== null && submission?.totalScore !== undefined ? (
@@ -520,7 +528,15 @@ export default function GradingResultsPage() {
         {/* Final Score Bar: Không bao giờ hiển thị điểm nếu submission bị SCORE_WITHHELD */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-extrabold text-2xl border border-indigo-200">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-extrabold text-2xl border ${
+              submission?.totalScore !== null && submission?.totalScore !== undefined
+                ? Number(submission.totalScore) >= 5.0
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : Number(submission.totalScore) === 0
+                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+            }`}>
               {isScoreWithheld
                 ? '---'
                 : submission?.totalScore !== null && submission?.totalScore !== undefined

@@ -21,6 +21,10 @@ Your task is to generate a complete programming assignment based on the given to
 
 RULES:
 - The assignment must be clear, specific, and suitable for university students.
+- The description must be written in English and provide full, detailed problem requirements, including:
+  1. Problem Statement & Background
+  2. Input / Output Format Specification
+  3. Constraints & Edge Cases
 - Generate 3 to 5 test cases in StdIn/StdOut format.
 - Score weights across all test cases must sum to exactly 100.
 - Test cases should cover: basic case, edge case, and performance case.
@@ -29,7 +33,7 @@ RULES:
 OUTPUT FORMAT (strict JSON, no markdown):
 {
   "title": "string",
-  "description": "string (2-3 paragraphs with requirements)",
+  "description": "string (structured with Problem Statement, Input/Output formats, and Constraints)",
   "testCases": [
     {
       "input": "string (stdin input)",

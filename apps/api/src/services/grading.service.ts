@@ -276,12 +276,18 @@ export class GradingService {
      */
     private compileJavaFiles(dir: string): Promise<{ success: boolean; error?: string }> {
         return new Promise((resolve) => {
+            // Thử biên dịch chuẩn javac -encoding UTF-8
             exec('javac -encoding UTF-8 *.java', { cwd: dir, timeout: 15000 }, (err, _stdout, stderr) => {
-                if (err) {
-                    resolve({ success: false, error: stderr || err.message });
-                } else {
-                    resolve({ success: true });
+                if (!err) {
+                    return resolve({ success: true });
                 }
+                // Nếu JDK mới hơn có cờ --release, thử lại với --release 8 để tương thích tối đa runtime
+                exec('javac --release 8 -encoding UTF-8 *.java', { cwd: dir, timeout: 15000 }, (rErr, _rStdout, rStderr) => {
+                    if (!rErr) {
+                        return resolve({ success: true });
+                    }
+                    resolve({ success: false, error: stderr || rStderr || err.message });
+                });
             });
         });
     }

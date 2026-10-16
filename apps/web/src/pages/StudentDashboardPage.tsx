@@ -87,11 +87,19 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
     };
   }
 
-  // Graded chính thức
+  // Graded chính thức (phân loại màu sắc theo thang điểm)
   if (item.score !== undefined && item.score !== null) {
+    const numScore = Number(item.score);
+    const isPassing = numScore >= 5.0;
+    const isZero = numScore === 0;
+
     return {
-      badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-      label: 'Graded',
+      badgeClass: isPassing
+        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+        : isZero
+        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+        : 'bg-amber-50 text-amber-700 border border-amber-200',
+      label: isPassing ? 'Graded' : isZero ? 'Failed (0 pts)' : 'Low score',
       showScore: true,
       isChecking: false,
     };
@@ -512,7 +520,13 @@ export default function StudentDashboardPage() {
                       {statusInfo.showScore && (
                         <div className="text-right">
                           <span className="text-xs text-slate-500 block">Result</span>
-                          <span className="text-xl font-bold text-emerald-600">
+                          <span className={`text-xl font-bold ${
+                            Number(assignment.score) >= 5.0
+                              ? 'text-emerald-600'
+                              : Number(assignment.score) === 0
+                              ? 'text-rose-600'
+                              : 'text-amber-600'
+                          }`}>
                             {assignment.score}
                             <span className="text-xs text-slate-400 font-normal"> / 10</span>
                           </span>

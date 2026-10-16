@@ -170,7 +170,13 @@ export const getAssignments = async (req: Request, res: Response) => {
 
         let whereClause: any = {};
         if (classId) {
-            whereClause.classId = String(classId);
+            const raw = String(classId).trim();
+            if (raw.includes(",")) {
+                const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+                whereClause.classId = { in: ids };
+            } else {
+                whereClause.classId = raw;
+            }
         } else if (user?.role === "STUDENT") {
             // Lấy các bài tập thuộc các lớp sinh viên đang theo học
             const enrollments = await prisma.classStudent.findMany({
