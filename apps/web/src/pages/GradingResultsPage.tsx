@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -77,7 +77,7 @@ export default function GradingResultsPage() {
   const [expandedTestCase, setExpandedTestCase] = useState<number | null>(null);
 
   // 1. Tải kết quả submission từ Backend API thật
-  const loadSubmission = async (initial = false) => {
+  const loadSubmission = useCallback(async (initial = false) => {
     if (!id) return;
     if (initial) setLoading(true);
     setErrorMessage('');
@@ -90,25 +90,27 @@ export default function GradingResultsPage() {
     } else {
       setErrorMessage(res.message || 'Unable to load submission results.');
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    // Tải kết quả submission từ backend khi component mount hoặc id thay đổi
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSubmission(true);
+  }, [loadSubmission]);
 
-    // Tự động polling cập nhật mỗi 2 giây nếu submission chưa có hoặc vẫn đang trong tiến trình chấm
+  useEffect(() => {
+    const isProcessing =
+      !submission ||
+      submission?.astCheckStatus === 'PENDING' ||
+      ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '');
+
+    if (!isProcessing) return;
+
     const interval = setInterval(() => {
-      if (
-        !submission ||
-        submission?.astCheckStatus === 'PENDING' ||
-        ['PENDING', 'QUEUED', 'RUNNING', 'RUNNING_TESTS'].includes(submission?.status || '')
-      ) {
-        loadSubmission(false);
-      }
+      loadSubmission(false);
     }, 2000);
+
     return () => clearInterval(interval);
-  }, [id, submission?.astCheckStatus, submission?.status]);
+  }, [submission, loadSubmission]);
 
   // Xử lý gửi khiếu nại (Appeal) thật qua POST /submissions/appeal
   const handleSendAppeal = async () => {
