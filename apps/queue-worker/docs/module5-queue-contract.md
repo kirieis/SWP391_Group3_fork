@@ -237,3 +237,45 @@ interface GitAnalyticsResult {
 | `USE_MOCKS` | `false` | Use in-memory mock clients |
 | `LOG_LEVEL` | `info` | Pino log level |
 | `NODE_ENV` | `development` | Environment name |
+
+---
+
+## 9. Task 3: Deadline Enforcement & Classification
+
+### Deadline Verification in Worker
+Before initiating Sandbox execution, the Worker verifies submission timeliness:
+1. If `job.data.deadline` is present, it directly compares `submittedAt > deadline`.
+2. Otherwise, calls Module 1: `GET /api/assignments/:assignmentId/deadline-check`.
+3. If deadline is exceeded:
+   - Status: `DEADLINE_EXCEEDED`
+   - Step: `COMPLETE` (100%)
+   - Sandbox, AST, and GenAI steps are completely bypassed.
+   - Total score: `0`
+
+### Unsubmitted Students (N/A Status)
+- For ended assignments, students who made 0 submissions are flagged with status: `NOT_SUBMITTED`.
+- Lecturer dashboard categorizes assignments into:
+  - `ACTIVE`: Deadline is in the future.
+  - `ENDED`: Deadline is in the past.
+
+---
+
+## 10. Task 5: Existing Assignments Query & Class Filtering
+
+### Query Endpoint Contract
+- Endpoint: `GET /api/assignments`
+- Query Parameters:
+  - `classIds`: Comma-separated list of class IDs (e.g., `class-1,class-2`) to filter assignments created across multiple classes.
+  - `classId`: Single class filter.
+  - `status`: `ACTIVE` | `ENDED` | `ALL`.
+  - `search`: Case-insensitive title/description search.
+
+### Response
+```typescript
+interface AssignmentQueryResponse {
+  success: boolean;
+  data: AssignmentItem[];
+  total: number;
+}
+```
+

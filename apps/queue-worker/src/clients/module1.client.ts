@@ -72,4 +72,83 @@ export class Module1Client {
     const response = await this.http.patch<Module1CallbackResponse>(url, body);
     return response.data;
   }
+
+  /**
+   * Verify if a submission is within deadline (Task 3).
+   * Checks with Module 1 API or queries assignment deadline.
+   */
+  async checkDeadline(
+    assignmentId: string,
+    submittedAt?: string,
+  ): Promise<import("../contracts/assignment.contract.js").DeadlineCheckResponse> {
+    const url = `/api/assignments/${assignmentId}/deadline-check`;
+    try {
+      const response = await this.http.get<import("../contracts/assignment.contract.js").DeadlineCheckResponse>(
+        url,
+        { params: { submittedAt } },
+      );
+      return response.data;
+    } catch {
+      // Fallback: fetch assignment directly and compute deadline status
+      const assignmentRes = await this.getAssignment(assignmentId);
+      const deadline = assignmentRes.data.deadline;
+      const subTime = submittedAt ? new Date(submittedAt).getTime() : Date.now();
+      const deadTime = new Date(deadline).getTime();
+      const isPastDeadline = !isNaN(subTime) && !isNaN(deadTime) && subTime > deadTime;
+      return {
+        assignmentId,
+        deadline,
+        isPastDeadline,
+        deadlineStatus: isPastDeadline ? "ENDED" : "ACTIVE",
+      };
+    }
+  }
+
+  /**
+   * Query created assignments, with optional classIds filtering (Task 5).
+   * Allows lecturer to view and select existing assignments.
+   */
+  async getAssignments(
+    filter?: import("../contracts/assignment.contract.js").AssignmentFilterQuery,
+  ): Promise<import("../contracts/assignment.contract.js").AssignmentQueryResponse> {
+    const url = "/api/assignments";
+    const params: Record<string, string | number | undefined> = {};
+
+    if (filter?.classId) params.classId = filter.classId;
+    if (filter?.classIds && filter.classIds.length > 0) {
+      params.classIds = filter.classIds.join(",");
+    }
+    if (filter?.status) params.status = filter.status;
+    if (filter?.lecturerId) params.lecturerId = filter.lecturerId;
+    if (filter?.search) params.search = filter.search;
+
+    const response = await this.http.get<import("../contracts/assignment.contract.js").AssignmentQueryResponse>(
+      url,
+      { params },
+    );
+    return response.data;
+  }
+
+  /**
+   * Get single assignment details by ID.
+   */
+  async getAssignment(
+    assignmentId: string,
+  ): Promise<import("../contracts/assignment.contract.js").AssignmentDetailResponse> {
+    const url = `/api/assignments/${assignmentId}`;
+    const response = await this.http.get<import("../contracts/assignment.contract.js").AssignmentDetailResponse>(url);
+    return response.data;
+  }
+
+  /**
+   * Mark all unsubmitted students for an expired assignment as NOT_SUBMITTED (N/A) (Task 3).
+   */
+  async markOverdueSubmissions(
+    assignmentId: string,
+  ): Promise<import("../contracts/assignment.contract.js").OverdueSweepResponse> {
+    const url = `/api/assignments/${assignmentId}/mark-overdue`;
+    const response = await this.http.post<import("../contracts/assignment.contract.js").OverdueSweepResponse>(url);
+    return response.data;
+  }
 }
+

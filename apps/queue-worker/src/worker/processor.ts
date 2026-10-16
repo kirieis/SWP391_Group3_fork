@@ -42,7 +42,12 @@ import { aiReviewRetryQueue } from "../queue/submission.queue.js";
 type Module1Like = {
   updateSubmissionResult: Module1Client["updateSubmissionResult"];
   updateGitAnalysisResult?: Module1Client["updateGitAnalysisResult"];
+  checkDeadline?: Module1Client["checkDeadline"];
+  getAssignments?: Module1Client["getAssignments"];
+  getAssignment?: Module1Client["getAssignment"];
+  markOverdueSubmissions?: Module1Client["markOverdueSubmissions"];
 };
+
 
 export function createClients(): {
   module1: Module1Like;
@@ -169,8 +174,79 @@ export async function processSubmission(
     }
   };
 
+  // ── Step 1.5: Deadline Verification (Task 3) ──────────────────────────
+
+  let isPastDeadline = false;
+  let deadlineIso: string | undefined = payload.deadline;
+
+  if (deadlineIso) {
+    const submissionTime = new Date(payload.submittedAt).getTime();
+    const deadlineTime = new Date(deadlineIso).getTime();
+    if (!isNaN(submissionTime) && !isNaN(deadlineTime) && submissionTime > deadlineTime) {
+      isPastDeadline = true;
+    }
+  } else if (clients.module1.checkDeadline) {
+    try {
+      const deadlineCheck = await clients.module1.checkDeadline(
+        payload.assignmentId,
+        payload.submittedAt,
+      );
+      if (deadlineCheck.isPastDeadline) {
+        isPastDeadline = true;
+        deadlineIso = deadlineCheck.deadline;
+      }
+    } catch (err) {
+      jobLog.warn(
+        { err },
+        "Could not verify deadline with Module 1, proceeding with pipeline",
+      );
+    }
+  }
+
+  if (isPastDeadline) {
+    jobLog.warn(
+      {
+        submittedAt: payload.submittedAt,
+        deadline: deadlineIso,
+      },
+      "Submission rejected: Assignment deadline exceeded",
+    );
+
+    await notifyModule1(payload.submissionId, {
+      status: "DEADLINE_EXCEEDED",
+      step: "COMPLETE",
+      progressPercent: 100,
+      totalScore: 0,
+      message: "Submission rejected: Assignment deadline has passed.",
+    });
+
+    return {
+      submissionId: payload.submissionId,
+      assignmentId: payload.assignmentId,
+      studentId: payload.studentId,
+      finalStatus: "DEADLINE_EXCEEDED",
+      totalScore: 0,
+      reason: payload.reason,
+      gradingRunNo: payload.gradingRunNo,
+      batchId: payload.batchId,
+      sandbox: {
+        outcome: "FAILED",
+        passedTests: 0,
+        totalTests: 0,
+        executionTimeMs: 0,
+      },
+      plagiarism: {
+        status: "SKIPPED",
+        similarityPercent: 0,
+        message: "AST analysis skipped due to deadline exceeded",
+      },
+      completedAt: new Date().toISOString(),
+    };
+  }
+
   // ── Step 2: Sandbox Execution (Module 2) ───────────────────────────────
   let sandboxResult: SandboxResponse;
+
 
   if (checkpoint.sandbox) {
     jobLog.info("Checkpoint hit: Skipping Sandbox execution (resuming from checkpoint)");

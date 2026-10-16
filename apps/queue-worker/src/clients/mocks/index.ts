@@ -71,7 +71,136 @@ export class MockModule1Client {
 
     return { success: true, message: "[MOCK] Git analysis result updated" };
   }
+
+  // Pre-configured mock assignments for Task 3 & Task 5 testing
+  public mockAssignments: Array<import("../../contracts/assignment.contract.js").AssignmentItem> = [
+    {
+      id: "asg-active-1",
+      classId: "class-101",
+      classCode: "SE1801",
+      title: "Java OOP Basics",
+      description: "Implement OOP hierarchy and unit tests",
+      language: "Java",
+      deadline: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
+      deadlineStatus: "ACTIVE",
+      testCasesCount: 5,
+      submissionsCount: 12,
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "asg-expired-1",
+      classId: "class-101",
+      classCode: "SE1801",
+      title: "Data Structures - Linked List",
+      description: "Singly and doubly linked lists implementation",
+      language: "Java",
+      deadline: new Date(Date.now() - 86400000).toISOString(), // Yesterday
+      deadlineStatus: "ENDED",
+      testCasesCount: 8,
+      submissionsCount: 25,
+      createdAt: new Date(Date.now() - 172800000).toISOString(),
+    },
+    {
+      id: "asg-active-2",
+      classId: "class-102",
+      classCode: "SE1802",
+      title: "Python Data Processing",
+      description: "Parse CSV and compute aggregates",
+      language: "Python",
+      deadline: new Date(Date.now() + 172800000).toISOString(), // 2 days later
+      deadlineStatus: "ACTIVE",
+      testCasesCount: 4,
+      submissionsCount: 8,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  async checkDeadline(
+    assignmentId: string,
+    submittedAt?: string,
+  ): Promise<import("../../contracts/assignment.contract.js").DeadlineCheckResponse> {
+    const asg = this.mockAssignments.find((a) => a.id === assignmentId);
+    // If not found or ID contains 'expired', simulate past deadline
+    const isExpiredById = assignmentId.toLowerCase().includes("expired") || assignmentId.toLowerCase().includes("late");
+    const deadline = asg ? asg.deadline : isExpiredById ? new Date(Date.now() - 3600000).toISOString() : new Date(Date.now() + 86400000).toISOString();
+    
+    const subTime = submittedAt ? new Date(submittedAt).getTime() : Date.now();
+    const deadTime = new Date(deadline).getTime();
+    const isPastDeadline = isExpiredById || (!isNaN(subTime) && !isNaN(deadTime) && subTime > deadTime);
+
+    return {
+      assignmentId,
+      deadline,
+      isPastDeadline,
+      deadlineStatus: isPastDeadline ? "ENDED" : "ACTIVE",
+    };
+  }
+
+  async getAssignments(
+    filter?: import("../../contracts/assignment.contract.js").AssignmentFilterQuery,
+  ): Promise<import("../../contracts/assignment.contract.js").AssignmentQueryResponse> {
+    let result = [...this.mockAssignments];
+
+    if (filter?.classIds && filter.classIds.length > 0) {
+      const set = new Set(filter.classIds);
+      result = result.filter((a) => set.has(a.classId));
+    } else if (filter?.classId) {
+      result = result.filter((a) => a.classId === filter.classId);
+    }
+
+    if (filter?.status && filter.status !== "ALL") {
+      result = result.filter((a) => a.deadlineStatus === filter.status);
+    }
+
+    if (filter?.search) {
+      const q = filter.search.toLowerCase();
+      result = result.filter((a) => a.title.toLowerCase().includes(q) || (a.description && a.description.toLowerCase().includes(q)));
+    }
+
+    return {
+      success: true,
+      data: result,
+      total: result.length,
+    };
+  }
+
+  async getAssignment(
+    assignmentId: string,
+  ): Promise<import("../../contracts/assignment.contract.js").AssignmentDetailResponse> {
+    const asg = this.mockAssignments.find((a) => a.id === assignmentId);
+    if (!asg) {
+      return {
+        success: true,
+        data: {
+          id: assignmentId,
+          classId: "class-101",
+          title: "Mock Assignment",
+          language: "Java",
+          deadline: new Date(Date.now() + 86400000).toISOString(),
+          deadlineStatus: "ACTIVE",
+          testCasesCount: 5,
+          submissionsCount: 0,
+        },
+      };
+    }
+    return {
+      success: true,
+      data: asg,
+    };
+  }
+
+  async markOverdueSubmissions(
+    assignmentId: string,
+  ): Promise<import("../../contracts/assignment.contract.js").OverdueSweepResponse> {
+    return {
+      assignmentId,
+      markedCount: 3,
+      studentIds: ["std-001", "std-002", "std-003"],
+      status: "NOT_SUBMITTED",
+    };
+  }
 }
+
 
 // ─── Mock Sandbox Client ─────────────────────────────────────────────────────
 
@@ -195,16 +324,16 @@ export class MockGenAiClient implements IGenAiClient {
     if (request.isCompilationError) {
       return {
         cleanCodeScore: 0,
-        feedback: "Chương trình không biên dịch được.",
+        feedback: "Program failed to compile.",
         compilationExplanation:
-          "Lỗi biên dịch: Không thể gán giá trị kiểu String cho biến int tại dòng 15. Hãy kiểm tra ép kiểu hoặc giá trị truyền vào.",
+          "Compilation error: Incompatible types - String cannot be converted to int at line 15. Please check type casting or assigned parameter.",
       };
     }
 
     return {
       cleanCodeScore: 88,
       feedback:
-        "Code cấu trúc rõ ràng, đặt tên biến chuẩn camelCase. Cần lưu ý xử lý null check trước khi gọi method.",
+        "Code has clear structure and adheres to camelCase variable naming. Consider adding null checks before method invocation.",
     };
   }
 }

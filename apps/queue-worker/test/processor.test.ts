@@ -165,8 +165,9 @@ describe("processSubmission (End-to-End Orchestrator)", () => {
     expect(result.finalStatus).toBe("COMPILATION_ERROR");
     expect(result.totalScore).toBe(0);
     expect(result.plagiarism.status).toBe("SKIPPED");
-    expect(result.genai?.compilationExplanation).toContain("Lỗi biên dịch");
+    expect(result.genai?.compilationExplanation).toContain("Compilation error");
   });
+
 
   // ── AST Failure is Non-blocking ───────────────────────────────────────
   it("should continue to GenAI even if AST analysis fails", async () => {
@@ -335,4 +336,52 @@ describe("processSubmission (End-to-End Orchestrator)", () => {
     const res2 = await processSubmission(jobSuspicious);
     expect(res2.plagiarism.status).toBe("SUSPICIOUS");
   });
+
+  // ── Task 3: Deadline Enforcement ──────────────────────────────────────────
+  it("should reject submission immediately when payload deadline is exceeded", async () => {
+    const job = createMockJob({
+      submissionId: "test-deadline-payload-001",
+      submittedAt: new Date(Date.now()).toISOString(),
+      deadline: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+      fileRelativePath: "uploads/submissions/normal_sample.zip",
+    });
+
+    const result = await processSubmission(job);
+
+    expect(result.finalStatus).toBe("DEADLINE_EXCEEDED");
+    expect(result.totalScore).toBe(0);
+    expect(result.plagiarism.status).toBe("SKIPPED");
+    expect(result.plagiarism.message).toContain("deadline");
+    expect(result.sandbox.passedTests).toBe(0);
+  });
+
+  it("should reject submission when Module 1 reports past deadline", async () => {
+    const job = createMockJob({
+      submissionId: "test-deadline-check-001",
+      assignmentId: "asg-expired-1", // mock returns isPastDeadline = true
+      submittedAt: new Date(Date.now()).toISOString(),
+      fileRelativePath: "uploads/submissions/normal_sample.zip",
+    });
+
+    const result = await processSubmission(job);
+
+    expect(result.finalStatus).toBe("DEADLINE_EXCEEDED");
+    expect(result.totalScore).toBe(0);
+    expect(result.plagiarism.status).toBe("SKIPPED");
+  });
+
+  it("should proceed with grading when deadline is in the future", async () => {
+    const job = createMockJob({
+      submissionId: "test-deadline-future-001",
+      submittedAt: new Date(Date.now()).toISOString(),
+      deadline: new Date(Date.now() + 86400000).toISOString(), // tomorrow
+      fileRelativePath: "uploads/submissions/normal_sample.zip",
+    });
+
+    const result = await processSubmission(job);
+
+    expect(result.finalStatus).toBe("GRADED");
+    expect(result.totalScore).toBe(10);
+  });
 });
+

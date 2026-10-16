@@ -132,9 +132,9 @@ function generateMockData(repoUrl: string): GitAnalyticsResult {
     totalCommits: 47,
     memberStats: [
       { author: "An Nguyen", commits: 15, additions: 1200, deletions: 340 },
-      { author: "Thiên Trần", commits: 12, additions: 980, deletions: 220 },
-      { author: "Nhật Lê", commits: 10, additions: 750, deletions: 180 },
-      { author: "Huy Phạm", commits: 10, additions: 650, deletions: 150 },
+      { author: "Thien Tran", commits: 12, additions: 980, deletions: 220 },
+      { author: "Nhat Le", commits: 10, additions: 750, deletions: 180 },
+      { author: "Huy Pham", commits: 10, additions: 650, deletions: 150 },
     ],
     analyzedAt: new Date().toISOString(),
   };
