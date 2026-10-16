@@ -224,6 +224,7 @@ export async function processSubmission(
       step: "COMPLETE",
       progressPercent: 100,
       totalScore: 0,
+      testResults: sandboxResult.testResults,
       message:
         `Execution terminated: ${sandboxResult.outcome}. ${sandboxResult.errorMessage ?? ""}`.trim(),
     });
@@ -287,6 +288,7 @@ export async function processSubmission(
       step: "COMPLETE",
       progressPercent: 100,
       totalScore: 0,
+      testResults: sandboxResult.testResults,
       compileErrorExplanation: compilationExplanation,
       message:
         `Compilation error: ${sandboxResult.errorMessage ?? "Build failed"}`.trim(),
@@ -486,6 +488,7 @@ export async function processSubmission(
     step: "COMPLETE",
     progressPercent: 100,
     totalScore,
+    testResults: sandboxResult.testResults,
     aiFeedback: genaiResult?.feedback,
     aiCleanCodeScore: genaiResult?.cleanCodeScore,
     aiReviewPending,

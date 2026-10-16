@@ -363,7 +363,15 @@ export const astService = {
                     : "Kiểm tra AST hoàn tất: Không phát hiện vi phạm quy chế.",
             });
 
-            return {
+            
+            setImmediate(async () => {
+                try {
+                    const { processGradingPipeline } = await import("./grading.pipeline.js");
+                    await processGradingPipeline(submissionId, resolvedPath);
+                } catch (e) { console.error("[Pipeline Trigger Error]:", e); }
+            });
+
+return {
                 success: true,
                 status: finalStatus,
                 similarityPercent: maxSimilarity,

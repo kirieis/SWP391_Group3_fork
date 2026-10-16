@@ -505,7 +505,7 @@ export default function StudentDashboardPage() {
                           <span className="text-xs text-slate-500 block">Kết quả</span>
                           <span className="text-xl font-bold text-emerald-600">
                             {assignment.score}
-                            <span className="text-xs text-slate-400 font-normal"> / 100</span>
+                            <span className="text-xs text-slate-400 font-normal"> / 10</span>
                           </span>
                         </div>
                       )}
