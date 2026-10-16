@@ -28,7 +28,7 @@ interface TestCaseItem {
   [key: string]: unknown;
 }
 
-// Kiểu cặp nghi vấn đạo văn
+// Kiểu pairs nghi vấn đạo văn
 interface PlagiarismMatch {
   similarityPercent?: number;
   [key: string]: unknown;
@@ -43,7 +43,7 @@ interface TestCaseResult {
   error?: string;
 }
 
-// Kiểu bài nộp từ backend
+// Kiểu submission từ backend
 interface SubmissionData {
   id?: string;
   status?: string;
@@ -76,7 +76,7 @@ export default function GradingResultsPage() {
   const [appealSuccess, setAppealSuccess] = useState<string>('');
   const [expandedTestCase, setExpandedTestCase] = useState<number | null>(null);
 
-  // 1. Tải kết quả bài nộp từ Backend API thật
+  // 1. Tải kết quả submission từ Backend API thật
   const loadSubmission = async (initial = false) => {
     if (!id) return;
     if (initial) setLoading(true);
@@ -88,16 +88,16 @@ export default function GradingResultsPage() {
     if (res.success && res.data) {
       setSubmission(res.data);
     } else {
-      setErrorMessage(res.message || 'Không thể tải kết quả bài nộp.');
+      setErrorMessage(res.message || 'Unable to load submission results.');
     }
   };
 
   useEffect(() => {
-    // Tải kết quả bài nộp từ backend khi component mount hoặc id thay đổi
+    // Tải kết quả submission từ backend khi component mount hoặc id thay đổi
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSubmission(true);
 
-    // Tự động polling cập nhật mỗi 2 giây nếu bài nộp chưa có hoặc vẫn đang trong tiến trình chấm
+    // Tự động polling cập nhật mỗi 2 giây nếu submission chưa có hoặc vẫn đang trong tiến trình chấm
     const interval = setInterval(() => {
       if (
         !submission ||
@@ -113,7 +113,7 @@ export default function GradingResultsPage() {
   // Xử lý gửi khiếu nại (Appeal) thật qua POST /submissions/appeal
   const handleSendAppeal = async () => {
     if (!appealReason.trim()) {
-      setAppealError('Vui lòng nhập lý do khiếu nại.');
+      setAppealError('Please enter a reason for the appeal.');
       return;
     }
     setAppealSending(true);
@@ -130,7 +130,7 @@ export default function GradingResultsPage() {
     setAppealSending(false);
 
     if (res.success) {
-      setAppealSuccess('Đã gửi đơn khiếu nại thành công đến Giảng viên!');
+      setAppealSuccess('Your appeal has been sent to the lecturer successfully!');
       setTimeout(() => {
         setShowAppealModal(false);
         setAppealReason('');
@@ -138,7 +138,7 @@ export default function GradingResultsPage() {
         loadSubmission(false);
       }, 1200);
     } else {
-      setAppealError(res.message || 'Lỗi khi gửi đơn khiếu nại.');
+      setAppealError(res.message || 'Error submitting the appeal.');
     }
   };
 
@@ -163,19 +163,19 @@ export default function GradingResultsPage() {
   // Mức độ tương đồng AST
   const plagLevel = isScoreWithheld ? 'DANGER' : resolveLevel(maxSimilarity);
 
-  // Đánh giá AI thật (nếu có từ aiFeedback)
+  // AI review thật (nếu có từ aiFeedback)
   const hasAiFeedback = Boolean(submission?.aiFeedback && String(submission.aiFeedback).trim().length > 0);
 
   // Kiểm tra từng bước tiến trình thực tế (Stepper) dựa trên dữ liệu thật của backend
   const stepStates = [
     {
       label: 'Queued',
-      desc: 'Hàng đợi chấm',
+      desc: 'Grading queue',
       status: submission ? 'DONE' : 'PENDING',
     },
     {
       label: 'Building',
-      desc: 'Môi trường Docker',
+      desc: 'Docker environment',
       status:
         submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
           ? 'DONE'
@@ -185,7 +185,7 @@ export default function GradingResultsPage() {
     },
     {
       label: 'Running Tests',
-      desc: 'Sandbox kiểm thử',
+      desc: 'Sandbox tests',
       status:
         submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD' || (submission?.totalScore !== null && submission?.totalScore !== undefined)
           ? 'DONE'
@@ -208,12 +208,12 @@ export default function GradingResultsPage() {
     },
     {
       label: 'AI Review',
-      desc: 'Đánh giá AI',
+      desc: 'AI review',
       status: hasAiFeedback || submission?.status === 'COMPLETED' ? 'DONE' : 'NEUTRAL',
     },
     {
       label: 'Complete',
-      desc: isScoreWithheld ? 'Giữ điểm' : 'Hoàn tất',
+      desc: isScoreWithheld ? 'Score withheld' : 'Completed',
       status:
         submission?.status === 'COMPLETED' || submission?.status === 'SCORE_WITHHELD'
           ? 'DONE'
@@ -223,7 +223,7 @@ export default function GradingResultsPage() {
     },
   ];
 
-  // Quay lại đúng trang phân hệ người dùng
+  // Back đúng trang phân hệ người dùng
   const handleGoBack = () => {
     try {
       const rawUser = localStorage.getItem('aita_user');
@@ -243,7 +243,7 @@ export default function GradingResultsPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-slate-500 text-xs">
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={24} className="animate-spin text-indigo-600" />
-          <span>Đang tải kết quả bài nộp từ hệ thống...</span>
+          <span>Loading submission results...</span>
         </div>
       </div>
     );
@@ -256,13 +256,13 @@ export default function GradingResultsPage() {
           <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl w-fit mx-auto">
             <AlertCircle size={28} />
           </div>
-          <h2 className="text-base font-bold text-slate-900">Không tìm thấy kết quả</h2>
+          <h2 className="text-base font-bold text-slate-900">Results not found</h2>
           <p className="text-xs text-slate-500">{errorMessage}</p>
           <button
             onClick={handleGoBack}
             className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-medium hover:bg-indigo-700 transition"
           >
-            Quay lại trang chính
+            Back to home
           </button>
         </div>
       </div>
@@ -279,15 +279,15 @@ export default function GradingResultsPage() {
             className="flex items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-2 rounded-xl transition shadow-sm"
           >
             <ArrowLeft size={14} />
-            <span>Quay lại Dashboard</span>
+            <span>Back to dashboard</span>
           </button>
           <div className="text-right">
-            <span className="text-xs text-slate-500">Mã bài nộp:</span>
+            <span className="text-xs text-slate-500">Submission ID:</span>
             <span className="text-xs font-mono text-indigo-600 ml-1 font-semibold">{id}</span>
           </div>
         </div>
 
-        {/* Cảnh báo nếu bài nộp bị giữ điểm do DANGER */}
+        {/* Cảnh báo nếu submission bị giữ điểm do DANGER */}
         {isScoreWithheld && (
           <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-4 shadow-sm animate-in fade-in">
             <div className="flex items-center gap-3">
@@ -295,9 +295,9 @@ export default function GradingResultsPage() {
                 <ShieldAlert size={24} />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-rose-900">Phát hiện nghi vấn tương đồng cao (Cờ DANGER)</h3>
+                <h3 className="text-sm font-bold text-rose-900">High similarity detected (DANGER flag)</h3>
                 <p className="text-xs text-rose-700 mt-0.5">
-                  Thuật toán AST đã phát hiện bài nộp có mức tương đồng cao ({maxSimilarity.toFixed(1)}%). Điểm số tạm thời được giữ lại để Giảng viên đối chiếu thủ công theo quy định.
+                  The AST algorithm detected high similarity ({maxSimilarity.toFixed(1)}%). The score is temporarily withheld for manual lecturer review.
                 </p>
               </div>
             </div>
@@ -311,12 +311,12 @@ export default function GradingResultsPage() {
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Tiến trình chấm điểm tự động (Real-time Pipeline)
+              Automatic grading progress (real-time pipeline)
             </h2>
             {isPending && (
               <span className="flex items-center gap-1.5 text-xs text-amber-600 font-medium bg-amber-50 px-2.5 py-1 rounded-lg">
                 <RotateCw size={12} className="animate-spin" />
-                Đang xử lý nền...
+                Processing in the background...
               </span>
             )}
           </div>
@@ -369,22 +369,22 @@ export default function GradingResultsPage() {
                   <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                     <CheckCircle2 size={18} />
                   </div>
-                  <h3 className="font-semibold text-slate-900 text-sm">Chấm Sandbox Test Cases</h3>
+                  <h3 className="font-semibold text-slate-900 text-sm">Sandbox test case grading</h3>
                 </div>
                 <span className="text-base font-bold text-emerald-600">
                   {isScoreWithheld ? (
-                    <span className="text-xs text-rose-600 font-semibold">Tạm giữ điểm</span>
+                    <span className="text-xs text-rose-600 font-semibold">Score withheld</span>
                   ) : submission?.totalScore !== null && submission?.totalScore !== undefined ? (
                     `${Number(submission.totalScore > 10 ? submission.totalScore / 10 : submission.totalScore).toFixed(1)} / 10`
                   ) : (
-                    'Chờ Sandbox'
+                    'Waiting for Sandbox'
                   )}
                 </span>
               </div>
 
               {testCases.length === 0 ? (
                 <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  Chưa có test case
+                  No test cases available
                 </div>
               ) : (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -409,7 +409,7 @@ export default function GradingResultsPage() {
                             )}
                             <span className="text-slate-800 font-medium">Test Case #{index + 1}</span>
                             <span className={`font-semibold ${passed ? 'text-emerald-700' : failed ? 'text-rose-700' : 'text-slate-500'}`}>
-                              {passed ? 'PASS' : failed ? 'FAIL' : isPending ? 'Đang chạy' : 'Không có dữ liệu'}
+                              {passed ? 'PASS' : failed ? 'FAIL' : isPending ? 'Running' : 'No data available'}
                             </span>
                           </div>
                           {expandedTestCase === index ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -417,11 +417,11 @@ export default function GradingResultsPage() {
 
                         {expandedTestCase === index && (
                           <div className="p-3 bg-white font-mono text-[11px] space-y-2 text-slate-600 border-t border-slate-200 break-words">
-                            <p><span className="text-slate-400">Input:</span> {tc.inputData || '(Không có)'}</p>
-                            <p><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(Không có)'}</p>
-                            {result && <p><span className="text-slate-400">Actual:</span> {result.actualOutput || '(Output rỗng)'}</p>}
-                            {result?.error && <p className="text-rose-700"><span className="text-rose-500">Lỗi:</span> {result.error}</p>}
-                            {result?.durationMs !== undefined && <p><span className="text-slate-400">Thời gian:</span> {result.durationMs} ms</p>}
+                            <p><span className="text-slate-400">Input:</span> {tc.inputData || '(None)'}</p>
+                            <p><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(None)'}</p>
+                            {result && <p><span className="text-slate-400">Actual:</span> {result.actualOutput || '(Empty output)'}</p>}
+                            {result?.error && <p className="text-rose-700"><span className="text-rose-500">Error:</span> {result.error}</p>}
+                            {result?.durationMs !== undefined && <p><span className="text-slate-400">Duration:</span> {result.durationMs} ms</p>}
                           </div>
                         )}
                       </div>
@@ -430,10 +430,10 @@ export default function GradingResultsPage() {
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-4 text-center">Docker Sandbox: Giới hạn 512MB RAM, Network None</p>
+            <p className="text-[11px] text-slate-400 mt-4 text-center">Docker Sandbox: 512 MB RAM limit, network disabled</p>
           </div>
 
-          {/* Card 2: AI Code Quality Review (Dữ liệu thật từ aiFeedback hoặc Trạng thái Chưa có dữ liệu) */}
+          {/* Card 2: AI Code Quality Review (Dữ liệu thật từ aiFeedback hoặc Trạng thái No data available) */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
@@ -445,7 +445,7 @@ export default function GradingResultsPage() {
                 </div>
                 {!hasAiFeedback && (
                   <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
-                    Sắp có
+                    Coming soon
                   </span>
                 )}
               </div>
@@ -459,14 +459,14 @@ export default function GradingResultsPage() {
               ) : (
                 <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
                   <Clock size={24} className="mx-auto text-slate-400" />
-                  <p className="text-xs font-semibold text-slate-700">Chưa có dữ liệu</p>
+                  <p className="text-xs font-semibold text-slate-700">No data available</p>
                   <p className="text-[11px] text-slate-400">
-                    Mô hình AI Semantic Code Review đang được hoàn thiện cho các bài tập tiếp theo.
+                    The AI semantic code review model is being developed for upcoming assignments.
                   </p>
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-4 text-center">Phân hệ 3: LLM Semantic Code Review</p>
+            <p className="text-[11px] text-slate-400 mt-4 text-center">Subsystem 3: LLM Semantic Code Review</p>
           </div>
 
           {/* Card 3: AST Plagiarism Check (Winnowing Thật) */}
@@ -492,7 +492,7 @@ export default function GradingResultsPage() {
                   >
                     <div className="text-center">
                       <span className="text-3xl font-extrabold text-slate-900">{maxSimilarity.toFixed(1)}%</span>
-                      <span className="text-[10px] text-slate-500 block">Tương đồng AST</span>
+                      <span className="text-[10px] text-slate-500 block">AST similarity</span>
                     </div>
                   </div>
                 </div>
@@ -505,17 +505,17 @@ export default function GradingResultsPage() {
 
               <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
                 {plagLevel === 'DANGER'
-                  ? 'Phát hiện tương đồng cấu trúc cây cú pháp cao với bài nộp khác.'
+                  ? 'High structural similarity with another submission was detected.'
                   : plagLevel === 'WARNING'
-                    ? 'Có một số đoạn tương đồng cấu trúc cú pháp, giảng viên có thể xem lại.'
-                    : 'Không phát hiện trùng lặp đáng kể với các bài nộp khác.'}
+                    ? 'Some code sections have similar syntax structures and may need lecturer review.'
+                    : 'No significant duplication was detected against other submissions.'}
               </p>
             </div>
-            <p className="text-[11px] text-slate-400 mt-4 text-center">Winnowing k-gram = 15, window = 25 (Phân hệ 4)</p>
+            <p className="text-[11px] text-slate-400 mt-4 text-center">Winnowing k-gram = 15, window = 25 (Subsystem 4)</p>
           </div>
         </div>
 
-        {/* Final Score Bar: Không bao giờ hiển thị điểm nếu bài nộp bị SCORE_WITHHELD */}
+        {/* Final Score Bar: Không bao giờ hiển thị điểm nếu submission bị SCORE_WITHHELD */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-extrabold text-2xl border border-indigo-200">
@@ -526,13 +526,13 @@ export default function GradingResultsPage() {
                   : '---'}
             </div>
             <div>
-              <p className="text-xs text-slate-500">Tổng điểm chính thức (Thang 10)</p>
+              <p className="text-xs text-slate-500">Final score (out of 10)</p>
               <h4 className="text-lg font-bold text-slate-900">
                 {isScoreWithheld
-                  ? 'TẠM GIỮ ĐIỂM ĐỐI CHIẾU'
+                  ? 'SCORE WITHHELD FOR REVIEW'
                   : submission?.totalScore !== null && submission?.totalScore !== undefined
-                    ? 'ĐÃ CÓ KẾT QUẢ'
-                    : 'ĐANG CHỜ CHẤM ĐIỂM'}
+                    ? 'RESULTS AVAILABLE'
+                    : 'AWAITING GRADING'}
               </h4>
             </div>
           </div>
@@ -546,7 +546,7 @@ export default function GradingResultsPage() {
             className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-3 rounded-xl text-xs font-semibold transition border border-slate-200"
           >
             <MessageSquare size={16} />
-            <span>Khiếu nại / Phúc khảo điểm (Appeal)</span>
+            <span>Score appeal / review</span>
           </button>
         </div>
 
@@ -555,7 +555,7 @@ export default function GradingResultsPage() {
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <h3 className="text-base font-bold text-slate-900">Gửi đơn khiếu nại điểm</h3>
+                <h3 className="text-base font-bold text-slate-900">Submit a score appeal</h3>
                 <button
                   onClick={() => setShowAppealModal(false)}
                   className="text-slate-400 hover:text-slate-600"
@@ -565,13 +565,13 @@ export default function GradingResultsPage() {
               </div>
 
               <p className="text-xs text-slate-500">
-                Đơn khiếu nại của bạn sẽ được chuyển trực tiếp tới hộp thư của Giảng viên phụ trách lớp.
+                Your appeal will be sent directly to the lecturer responsible for your class.
               </p>
               <textarea
                 rows={4}
                 value={appealReason}
                 onChange={(e) => setAppealReason(e.target.value)}
-                placeholder="Nêu rõ lý do bạn cho rằng kết quả chấm điểm cần được xem xét lại..."
+                placeholder="Explain why you believe the grading result should be reviewed..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
               />
 
@@ -595,7 +595,7 @@ export default function GradingResultsPage() {
                   onClick={() => setShowAppealModal(false)}
                   className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs hover:bg-slate-200"
                 >
-                  Hủy
+                  Cancel
                 </button>
                 <button
                   disabled={appealSending}
@@ -603,7 +603,7 @@ export default function GradingResultsPage() {
                   className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-medium hover:bg-indigo-700 flex items-center gap-1.5"
                 >
                   {appealSending ? <Loader2 size={14} className="animate-spin" /> : null}
-                  <span>{appealSending ? 'Đang gửi...' : 'Gửi đơn'}</span>
+                  <span>{appealSending ? 'Sending...' : 'Submit appeal'}</span>
                 </button>
               </div>
             </div>

@@ -7,7 +7,7 @@ import { LEVEL_STYLE, parseFragments, resolveLevel } from '../features/plagiaris
 import type { MatchedFragment } from '../features/plagiarism/level';
 import { DEMO_PAIR } from '../features/plagiarism/demoPair';
 
-// Trang giảng viên: so sánh song song hai bài nghi trùng và tô sáng các dòng trùng.
+// Trang giảng viên: so sánh song song hai assignments nghi trùng và tô sáng các matching lines.
 //
 // Hợp đồng API cần từ backend (xem CanSua / ghi chú gửi An):
 //   GET /api/plagiarism/matches/:matchId   (chỉ giảng viên của lớp)
@@ -17,7 +17,7 @@ import { DEMO_PAIR } from '../features/plagiarism/demoPair';
 //        submission1: { id, studentCode, fullName, code },   // a_lines thuộc submission1
 //        submission2: { id, studentCode, fullName, code }    // b_lines thuộc submission2
 //      }
-// Chưa có endpoint thì mở /lecturer/plagiarism/demo để xem bằng dữ liệu mẫu.
+// Not available endpoint thì mở /lecturer/plagiarism/demo để xem bằng dữ liệu mẫu.
 
 interface PairSide {
   id?: string;
@@ -131,7 +131,7 @@ export default function PlagiarismPairPage() {
       if (!parsed) {
         setError(
           res.message ||
-            'Không đọc được dữ liệu cặp trùng. Backend cần endpoint GET /api/plagiarism/matches/:id trả mã nguồn của cả hai bài.'
+            'Unable to load the comparison data. The backend must provide GET /api/plagiarism/matches/:id with the source code for both submissions.'
         );
       }
       setPair(parsed);
@@ -158,13 +158,13 @@ export default function PlagiarismPairPage() {
           className="flex items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-2 rounded-xl transition shadow-sm"
         >
           <ArrowLeft size={14} />
-          <span>Quay lại</span>
+          <span>Back</span>
         </button>
 
         {loading && (
           <div className="flex items-center gap-2 text-sm text-slate-500">
             <Loader2 size={16} className="animate-spin" />
-            <span>Đang tải cặp bài nghi trùng...</span>
+            <span>Loading suspected matching submissions...</span>
           </div>
         )}
 
@@ -172,13 +172,13 @@ export default function PlagiarismPairPage() {
           <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-sm text-rose-800">
             <AlertCircle size={18} className="mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold">Không mở được trang so sánh</p>
+              <p className="font-semibold">Unable to open the comparison page</p>
               <p className="text-xs mt-1">{error}</p>
               <button
                 onClick={() => navigate('/lecturer/plagiarism/demo')}
                 className="text-xs text-indigo-700 underline mt-2"
               >
-                Xem bằng dữ liệu mẫu
+                View demo data
               </button>
             </div>
           </div>
@@ -195,7 +195,7 @@ export default function PlagiarismPairPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h1 className="text-base font-bold text-slate-900">So sánh hai bài nộp</h1>
+                    <h1 className="text-base font-bold text-slate-900">Compare two submissions</h1>
                     <LevelBadge percent={pair.similarityPercent} level={pair.level} solid />
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
@@ -203,8 +203,8 @@ export default function PlagiarismPairPage() {
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     {pair.mode === 'lex'
-                      ? 'So theo chuỗi token (bài có lỗi cú pháp nên không dựng được cây AST).'
-                      : 'So theo cấu trúc cây cú pháp đã chuẩn hóa: đổi tên biến, thứ tự hàm, for/while vẫn bị phát hiện.'}
+                      ? 'Compared by token sequence (syntax errors prevented AST construction).'
+                      : 'Compared using normalized syntax trees; variable renaming, function order, and for/while changes can still be detected.'}
                   </p>
                 </div>
               </div>
@@ -212,7 +212,7 @@ export default function PlagiarismPairPage() {
               {level === 'DANGER' && (
                 <div className="flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
                   <ShieldAlert size={16} />
-                  <span>Điểm của bài này đang được giữ để giảng viên xem lại</span>
+                  <span>This submission’s score is withheld for lecturer review</span>
                 </div>
               )}
             </div>
@@ -220,23 +220,23 @@ export default function PlagiarismPairPage() {
             <div className="flex items-start gap-2 text-[11px] text-slate-500">
               <Info size={14} className="mt-0.5 shrink-0" />
               <p>
-                Phần tô màu là các đoạn mã có cùng cấu trúc ({pair.fragments.length} đoạn). Đây là gợi ý để giảng viên đối
-                chiếu, không phải kết luận đạo văn: các bài cơ bản như sắp xếp, tìm kiếm có thể giống nhau một cách tự
-                nhiên.
+                Highlighted areas have matching code structures ({pair.fragments.length} sections). This is a reference for lecturer review
+                not a plagiarism verdict: basic algorithms such as sorting and searching can naturally look similar.
+                
               </p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <CodePanel
-                title={`${pair.a.studentCode ?? ''} ${pair.a.fullName ?? 'Bài 1'}`.trim()}
-                subtitle={`${marksA.size} dòng trùng`}
+                title={`${pair.a.studentCode ?? ''} ${pair.a.fullName ?? 'Submission 1'}`.trim()}
+                subtitle={`${marksA.size} matching lines`}
                 code={pair.a.code}
                 marked={marksA}
                 markClass={markClass}
               />
               <CodePanel
-                title={`${pair.b.studentCode ?? ''} ${pair.b.fullName ?? 'Bài 2'}`.trim()}
-                subtitle={`${marksB.size} dòng trùng`}
+                title={`${pair.b.studentCode ?? ''} ${pair.b.fullName ?? 'Submission 2'}`.trim()}
+                subtitle={`${marksB.size} matching lines`}
                 code={pair.b.code}
                 marked={marksB}
                 markClass={markClass}

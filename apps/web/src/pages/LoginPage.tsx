@@ -46,14 +46,14 @@ function useGoogleOAuth(role: Role, onSuccess: (token: string, role: Role) => vo
     },
     onError: (error) => {
       console.error('Google OAuth error:', error);
-      onError('Đăng nhập Google thất bại. Vui lòng thử lại.');
+      onError('Google sign-in failed. Please try again.');
     },
     onNonOAuthError: (error) => {
       console.error('Non-OAuth error:', error);
       if (error.type === 'popup_closed') {
-        onError('Bạn đã đóng cửa sổ đăng nhập Google.');
+        onError('You closed the Google sign-in window.');
       } else if (error.type === 'popup_failed_to_open') {
-        onError('Không thể mở popup Google. Vui lòng kiểm tra quyền mở popup của trình duyệt.');
+        onError('Unable to open the Google popup. Check your browser popup permissions.');
       }
     },
   });
@@ -67,7 +67,7 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState<Role | null>(null);
   const [error, setError] = useState<string>(() =>
-    searchParams.get('reason') === 'expired' ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' : ''
+    searchParams.get('reason') === 'expired' ? 'Your session has expired. Please sign in again.' : ''
   );
 
   // 1. Khôi phục phiên hoặc tự động chuyển hướng nếu token hợp lệ
@@ -109,13 +109,13 @@ export default function LoginPage() {
       }
     } catch {
       setLoading(null);
-      setError('Không thể lấy thông tin tài khoản Google. Vui lòng kiểm tra kết nối mạng.');
+      setError('Unable to retrieve your Google account information. Check your network connection.');
       return;
     }
 
     if (!googleUser) {
       setLoading(null);
-      setError('Không lấy được thông tin email Google.');
+      setError('Unable to retrieve your Google email address.');
       return;
     }
 
@@ -143,7 +143,7 @@ export default function LoginPage() {
         navigate('/dashboard');
       }
     } else {
-      setError(res.message || 'Đăng nhập không thành công.');
+      setError(res.message || 'Login failed.');
     }
   };
 
@@ -184,14 +184,14 @@ export default function LoginPage() {
         navigate('/dashboard');
       }
     } else {
-      setError(res.message || 'Đăng nhập không thành công.');
+      setError(res.message || 'Login failed.');
     }
   };
 
   const handleStudentGoogleClick = () => {
     setError('');
     if (IS_PLACEHOLDER) {
-      setError('Chưa cấu hình Google Client ID thật trong VITE_GOOGLE_CLIENT_ID.');
+      setError('A valid Google Client ID has not been configured in VITE_GOOGLE_CLIENT_ID.');
       return;
     }
     loginStudent();
@@ -200,7 +200,7 @@ export default function LoginPage() {
   const handleLecturerGoogleClick = () => {
     setError('');
     if (IS_PLACEHOLDER) {
-      setError('Chưa cấu hình Google Client ID thật trong VITE_GOOGLE_CLIENT_ID.');
+      setError('A valid Google Client ID has not been configured in VITE_GOOGLE_CLIENT_ID.');
       return;
     }
     loginLecturer();
@@ -267,7 +267,7 @@ export default function LoginPage() {
             AITA-Intelligent
           </h1>
           <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 28px', lineHeight: 1.6 }}>
-            Nền tảng Trợ lý Giảng dạy &amp; Phân tích Cú pháp AST
+            Teaching Assistant &amp; AST Analysis Platform
           </p>
 
           {/* Thông báo lỗi nếu có */}
@@ -292,7 +292,7 @@ export default function LoginPage() {
 
           {/* TUYẾN CHÍNH: Đăng nhập Google thật (Primary Path) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Sinh viên - Google */}
+            {/* Student - Google */}
             <button
               id="btn-login-student-google"
               onClick={handleStudentGoogleClick}
@@ -321,10 +321,10 @@ export default function LoginPage() {
               ) : (
                 <GoogleIcon size={18} />
               )}
-              <span>Đăng nhập Google — Sinh viên</span>
+              <span>Sign in with Google — Student</span>
             </button>
 
-            {/* Giảng viên - Google */}
+            {/* Lecturer - Google */}
             <button
               id="btn-login-lecturer-google"
               onClick={handleLecturerGoogleClick}
@@ -352,7 +352,7 @@ export default function LoginPage() {
               ) : (
                 <GoogleIcon size={16} />
               )}
-              <span>Đăng nhập Google — Giảng viên</span>
+              <span>Sign in with Google — Lecturer</span>
             </button>
           </div>
 
@@ -370,7 +370,7 @@ export default function LoginPage() {
           >
             <ShieldCheck size={13} style={{ color: '#22c55e' }} />
             <span>
-              Chấp nhận domain{' '}
+              Accepted domains{' '}
               <strong style={{ color: '#94a3b8' }}>@fpt.edu.vn</strong> &amp;{' '}
               <strong style={{ color: '#94a3b8' }}>@fe.edu.vn</strong>
             </span>
@@ -397,11 +397,11 @@ export default function LoginPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                   <AlertCircle size={14} style={{ color: '#f59e0b' }} />
                   <span style={{ color: '#fbbf24', fontSize: 12, fontWeight: 700 }}>
-                    Chế độ Dev Local (VITE_ENABLE_DEV_LOGIN=true)
+                    Local development mode (VITE_ENABLE_DEV_LOGIN=true)
                   </span>
                 </div>
                 <p style={{ color: '#94a3b8', fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>
-                  Dùng để kiểm thử nhanh các màn hình giao diện mà không cần cấu hình Google Client ID thật:
+                  Use this mode to quickly test the UI without configuring a real Google Client ID:
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <button
@@ -424,7 +424,7 @@ export default function LoginPage() {
                     }}
                   >
                     <GraduationCap size={15} />
-                    <span>Sinh viên — Dev Mode</span>
+                    <span>Student — Dev Mode</span>
                   </button>
 
                   <button
@@ -447,7 +447,7 @@ export default function LoginPage() {
                     }}
                   >
                     <School size={15} />
-                    <span>Giảng viên — Dev Mode</span>
+                    <span>Lecturer — Dev Mode</span>
                   </button>
                 </div>
               </div>

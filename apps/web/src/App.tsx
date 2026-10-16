@@ -13,7 +13,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
         
-        {/* Phân hệ Sinh viên */}
+        {/* Phân hệ Student */}
         <Route
           path="/dashboard"
           element={
@@ -23,7 +23,7 @@ export default function App() {
           }
         />
         
-        {/* Xem kết quả bài nộp (Sinh viên chủ bài, hoặc Giảng viên/Admin) */}
+        {/* Xem kết quả submission (Student chủ assignments, hoặc Lecturer/Admin) */}
         <Route
           path="/submissions/:id/results"
           element={
@@ -33,7 +33,7 @@ export default function App() {
           }
         />
         
-        {/* Phân hệ Giảng viên */}
+        {/* Phân hệ Lecturer */}
         <Route
           path="/lecturer/dashboard"
           element={
@@ -43,7 +43,7 @@ export default function App() {
           }
         />
         
-        {/* So sánh cặp nghi vấn đạo văn (Chỉ Giảng viên / Admin) */}
+        {/* So sánh pairs nghi vấn đạo văn (Chỉ Lecturer / Admin) */}
         <Route
           path="/lecturer/plagiarism/:matchId"
           element={

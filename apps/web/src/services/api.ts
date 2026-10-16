@@ -58,7 +58,7 @@ export async function apiRequest<T = unknown>(
                 success: false,
                 errorType: 'UNAUTHORIZED',
                 status: 401,
-                message: (data?.message as string) || "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+                message: (data?.message as string) || "Your session has expired. Please sign in again.",
             };
         }
 
@@ -68,18 +68,18 @@ export async function apiRequest<T = unknown>(
                 success: false,
                 errorType: 'BUSINESS_ERROR',
                 status: response.status,
-                message: (data?.message as string) || `Máy chủ phản hồi mã lỗi ${response.status}.`,
+                message: (data?.message as string) || `The server returned error code ${response.status}.`,
             };
         }
 
         return (data as unknown as ApiResponse<T>) || { success: true };
     } catch (error: unknown) {
         // Lỗi mạng / Mất kết nối tới Backend
-        console.error("Lỗi kết nối API:", error);
+        console.error("API connection error:", error);
         return {
             success: false,
             errorType: 'NETWORK_ERROR',
-            message: "Không thể kết nối tới máy chủ Backend (Port 5000). Vui lòng kiểm tra lại dịch vụ mạng.",
+            message: "Unable to connect to the backend server (port 5000). Please check the network service.",
         };
     }
 }

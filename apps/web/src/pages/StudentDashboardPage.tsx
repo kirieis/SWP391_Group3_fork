@@ -20,6 +20,7 @@ import { apiRequest } from '../services/api';
 export interface AssignmentItem {
   id: string;
   title: string;
+  description?: string | null;
   classCode: string;
   language: string;
   deadline: string;
@@ -40,7 +41,7 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   if (item.status === 'NOT_SUBMITTED') {
     return {
       badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-      label: 'Chưa nộp',
+      label: 'Not submitted',
       showScore: false,
       isChecking: false,
     };
@@ -50,7 +51,7 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   if (item.status === 'SCORE_WITHHELD') {
     return {
       badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
-      label: 'Đang chờ giảng viên xem xét',
+      label: 'Awaiting lecturer review',
       showScore: false,
       isChecking: false,
     };
@@ -60,7 +61,7 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   if (item.astCheckStatus === 'NEEDS_REVIEW') {
     return {
       badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
-      label: 'Cần xem xét (Phân tích Lexical)',
+      label: 'Review required (lexical analysis)',
       showScore: item.score !== undefined && item.score !== null,
       isChecking: false,
     };
@@ -70,7 +71,7 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   if (item.status === 'FAILED' || item.astCheckStatus === 'FAILED') {
     return {
       badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
-      label: 'Lỗi kiểm tra cú pháp',
+      label: 'Syntax check failed',
       showScore: false,
       isChecking: false,
     };
@@ -80,17 +81,17 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   if (item.status === 'PENDING' || item.status === 'RUNNING' || item.astCheckStatus === 'PENDING') {
     return {
       badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
-      label: 'Đang kiểm tra...',
+      label: 'Checking...',
       showScore: false,
       isChecking: true,
     };
   }
 
-  // Đã có điểm chính thức
+  // Graded chính thức
   if (item.score !== undefined && item.score !== null) {
     return {
       badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-      label: 'Đã có điểm',
+      label: 'Graded',
       showScore: true,
       isChecking: false,
     };
@@ -99,7 +100,7 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   // Trạng thái trung tính khác (đảm bảo không làm vỡ giao diện)
   return {
     badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-    label: item.status || 'Đã nộp bài',
+    label: item.status || 'Submitted',
     showScore: false,
     isChecking: false,
   };
@@ -108,6 +109,7 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
 interface RawAssignment {
   id: string;
   title: string;
+  description?: string | null;
   language?: string;
   deadline?: string;
   class?: { classCode?: string };
@@ -135,12 +137,12 @@ export default function StudentDashboardPage() {
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
 
-  // Polling quản lý tiến trình chấm bài
+  // Polling quản lý tiến trình chấm assignments
   const [isPolling, setIsPolling] = useState(false);
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollingCountRef = useRef(0);
 
-  // Modal nộp bài
+  // Modal nộp assignments
   const [selectedAssignment, setSelectedAssignment] = useState<AssignmentItem | null>(null);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -157,7 +159,7 @@ export default function StudentDashboardPage() {
     pollingCountRef.current = 0;
   };
 
-  // 1. Tải danh sách bài tập thật từ Backend API
+  // 1. Tải danh sách assignments thật từ Backend API
   const loadAssignments = async (showInitialLoader = false) => {
     if (showInitialLoader) {
       setLoading(true);
@@ -187,10 +189,11 @@ export default function StudentDashboardPage() {
         return {
           id: item.id,
           title: item.title,
-          classCode: item.class?.classCode || 'CHƯA PHÂN LỚP',
+          description: item.description ?? null,
+          classCode: item.class?.classCode || 'UNASSIGNED CLASS',
           language: item.language || 'Java',
           rawDeadline: item.deadline || '',
-          deadline: item.deadline ? new Date(item.deadline).toLocaleString('vi-VN') : 'Không giới hạn',
+          deadline: item.deadline ? new Date(item.deadline).toLocaleString('en-US') : 'No deadline',
           status,
           score,
           latestSubmissionId,
@@ -200,7 +203,7 @@ export default function StudentDashboardPage() {
 
       setAssignments(mapped);
 
-      // Kiểm tra xem có bài nộp nào còn PENDING không để duy trì polling
+      // Kiểm tra xem có submission nào còn PENDING không để duy trì polling
       const hasPending = mapped.some(
         (a) => a.astCheckStatus === 'PENDING' || a.status === 'PENDING' || a.status === 'RUNNING'
       );
@@ -211,7 +214,7 @@ export default function StudentDashboardPage() {
       }
     } else {
       // Khi API lỗi -> Chuyển sang trạng thái Error rõ ràng (KHÔNG DÙNG FAKE DATA)
-      setErrorMessage(res.message || 'Không thể tải danh sách bài tập từ máy chủ.');
+      setErrorMessage(res.message || 'Unable to load assignments from the server.');
       stopPolling();
     }
   };
@@ -233,7 +236,7 @@ export default function StudentDashboardPage() {
   };
 
   useEffect(() => {
-    // Tải danh sách bài tập khi component mount - đây là side-effect chuẩn của useEffect
+    // Tải danh sách assignments khi component mount - đây là side-effect chuẩn của useEffect
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAssignments(true);
 
@@ -246,20 +249,20 @@ export default function StudentDashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 3. Xử lý nộp bài tập (.zip) thật
+  // 3. Xử lý nộp assignments (.zip) thật
   const handleSubmitAssignment = async () => {
     if (!selectedAssignment || !fileToUpload) {
-      setUploadError('Vui lòng chọn file .zip bài nộp.');
+      setUploadError('Please select your submission ZIP file.');
       return;
     }
 
     if (!fileToUpload.name.toLowerCase().endsWith('.zip')) {
-      setUploadError('Hệ thống chỉ chấp nhận file định dạng .zip.');
+      setUploadError('Only .zip files are accepted.');
       return;
     }
 
     if (fileToUpload.size > 10 * 1024 * 1024) {
-      setUploadError('Dung lượng file vượt quá giới hạn cho phép (tối đa 10MB).');
+      setUploadError('File size exceeds the 10 MB limit.');
       return;
     }
 
@@ -278,7 +281,7 @@ export default function StudentDashboardPage() {
     setSubmitting(false);
 
     if (res.success && res.data?.submissionId) {
-      setUploadSuccessMessage(res.message || 'Nộp bài thành công! Đang tiến hành chấm tự động.');
+      setUploadSuccessMessage(res.message || 'Submission uploaded successfully! Automatic grading has started.');
       setTimeout(() => {
         setSelectedAssignment(null);
         setFileToUpload(null);
@@ -288,11 +291,11 @@ export default function StudentDashboardPage() {
       }, 1000);
     } else {
       // Hiển thị chính xác thông báo lỗi từ backend (ví dụ: đã quá hạn nộp, quá số lần nộp cho phép Risk R01)
-      setUploadError(res.message || 'Nộp bài thất bại. Vui lòng thử lại.');
+      setUploadError(res.message || 'Submission failed. Please try again.');
     }
   };
 
-  // Lọc và tìm kiếm bài tập trên dữ liệu thật
+  // Lọc và tìm kiếm assignments trên dữ liệu thật
   const filteredAssignments = assignments.filter((item) => {
     const statusInfo = getAssignmentStatusInfo(item);
     const matchStatus =
@@ -325,13 +328,13 @@ export default function StudentDashboardPage() {
 
         <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
-            <p className="text-xs font-semibold text-slate-800">{user?.fullName || 'Sinh viên'}</p>
+            <p className="text-xs font-semibold text-slate-800">{user?.fullName || 'Student'}</p>
             <p className="text-[11px] text-slate-500">{user?.email || '@fpt.edu.vn'}</p>
           </div>
           <div className="w-9 h-9 rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center text-xs shadow-sm">
             {user?.fullName?.charAt(0) || 'SV'}
           </div>
-          {/* Nút Đăng xuất chuẩn */}
+          {/* Nút Sign out chuẩn */}
           <button
             onClick={() => {
               localStorage.removeItem('aita_token');
@@ -339,7 +342,7 @@ export default function StudentDashboardPage() {
               navigate('/login', { replace: true });
             }}
             className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition"
-            title="Đăng xuất"
+            title="Sign out"
           >
             <LogOut size={16} />
           </button>
@@ -355,8 +358,8 @@ export default function StudentDashboardPage() {
               <BookOpen size={24} />
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-500">Tổng số bài tập</p>
-              <p className="text-2xl font-bold text-slate-900">{assignments.length} bài</p>
+              <p className="text-xs font-medium text-slate-500">Total assignments</p>
+              <p className="text-2xl font-bold text-slate-900">{assignments.length} assignments</p>
             </div>
           </div>
 
@@ -365,7 +368,7 @@ export default function StudentDashboardPage() {
               <CheckCircle size={24} />
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-500">Đã nộp bài</p>
+              <p className="text-xs font-medium text-slate-500">Submitted</p>
               <p className="text-2xl font-bold text-emerald-600">
                 {assignments.filter((a) => a.status !== 'NOT_SUBMITTED').length} / {assignments.length}
               </p>
@@ -377,11 +380,11 @@ export default function StudentDashboardPage() {
               <Clock size={24} />
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-500">Trạng thái chấm bài</p>
+              <p className="text-xs font-medium text-slate-500">Grading status</p>
               <div className="flex items-center gap-1.5 mt-1">
                 {isPolling && <RotateCw size={12} className="animate-spin text-amber-600" />}
                 <p className="text-sm font-bold text-amber-600">
-                  {isPolling ? 'Đang cập nhật tiến trình...' : 'Sẵn sàng chấm tự động'}
+                  {isPolling ? 'Updating progress...' : 'Ready for automatic grading'}
                 </p>
               </div>
             </div>
@@ -394,7 +397,7 @@ export default function StudentDashboardPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="Tìm kiếm bài tập, mã lớp..."
+              placeholder="Search assignments or class codes..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white"
@@ -403,11 +406,11 @@ export default function StudentDashboardPage() {
 
           <div className="flex gap-2 w-full sm:w-auto overflow-x-auto">
             {[
-              { id: 'ALL', label: 'Tất cả' },
-              { id: 'NOT_SUBMITTED', label: 'Chưa nộp' },
-              { id: 'PENDING', label: 'Đang kiểm tra' },
-              { id: 'GRADED', label: 'Đã có điểm' },
-              { id: 'SCORE_WITHHELD', label: 'Chờ xem xét' },
+              { id: 'ALL', label: 'All' },
+              { id: 'NOT_SUBMITTED', label: 'Not submitted' },
+              { id: 'PENDING', label: 'Checking' },
+              { id: 'GRADED', label: 'Graded' },
+              { id: 'SCORE_WITHHELD', label: 'Awaiting review' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -428,23 +431,23 @@ export default function StudentDashboardPage() {
         {loading && (
           <div className="p-16 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
             <Loader2 size={24} className="animate-spin text-indigo-600" />
-            <span>Đang tải danh sách bài tập từ máy chủ...</span>
+            <span>Loading assignments from the server...</span>
           </div>
         )}
 
-        {/* TRẠNG THÁI 2: Lỗi kết nối / Máy chủ (Error state với nút Thử lại) */}
+        {/* TRẠNG THÁI 2: Lỗi kết nối / Máy chủ (Error state với nút Try again) */}
         {!loading && errorMessage && (
           <div className="p-12 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-3">
             <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
               <AlertCircle size={28} />
             </div>
-            <h3 className="text-sm font-bold text-slate-900">Không thể tải danh sách bài tập</h3>
+            <h3 className="text-sm font-bold text-slate-900">Unable to load assignments</h3>
             <p className="text-xs text-slate-500 max-w-md">{errorMessage}</p>
             <button
               onClick={() => loadAssignments(true)}
               className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-xl transition shadow-sm"
             >
-              Thử lại
+              Try again
             </button>
           </div>
         )}
@@ -455,19 +458,19 @@ export default function StudentDashboardPage() {
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
               <BookOpen size={28} />
             </div>
-            <h3 className="text-sm font-bold text-slate-900">Bạn chưa có bài tập nào</h3>
+            <h3 className="text-sm font-bold text-slate-900">No assignments yet</h3>
             <p className="text-xs text-slate-500 max-w-sm">
-              Hiện tại bạn chưa được ghi danh vào bài tập nào hoặc giảng viên chưa mở đề bài cho lớp của bạn.
+              You are not enrolled in any assignments yet, or your lecturer has not published an assignment for your class.
             </p>
           </div>
         )}
 
-        {/* TRẠNG THÁI 4: Hiển thị danh sách bài tập thật */}
+        {/* TRẠNG THÁI 4: Hiển thị danh sách assignments thật */}
         {!loading && !errorMessage && assignments.length > 0 && (
           <div className="space-y-4">
             {filteredAssignments.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400">
-                Không tìm thấy bài tập nào phù hợp với bộ lọc hiện tại.
+                No assignments match the current filters.
               </div>
             ) : (
               filteredAssignments.map((assignment) => {
@@ -491,9 +494,15 @@ export default function StudentDashboardPage() {
                       <h3 className="font-semibold text-slate-900 text-base group-hover:text-indigo-600 transition">
                         {assignment.title}
                       </h3>
+                      {assignment.description?.trim() && (
+                        <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Assignment description</p>
+                          <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">{assignment.description}</p>
+                        </div>
+                      )}
                       <p className="text-xs text-slate-500 flex items-center gap-1.5">
                         <Clock size={14} className="text-slate-400" />
-                        Hạn nộp: <span className="text-slate-700 font-medium">{assignment.deadline}</span>
+                        Deadline: <span className="text-slate-700 font-medium">{assignment.deadline}</span>
                       </p>
                     </div>
 
@@ -502,7 +511,7 @@ export default function StudentDashboardPage() {
                       {/* Hiển thị điểm số thật (nếu có và không bị SCORE_WITHHELD) */}
                       {statusInfo.showScore && (
                         <div className="text-right">
-                          <span className="text-xs text-slate-500 block">Kết quả</span>
+                          <span className="text-xs text-slate-500 block">Result</span>
                           <span className="text-xl font-bold text-emerald-600">
                             {assignment.score}
                             <span className="text-xs text-slate-400 font-normal"> / 10</span>
@@ -527,17 +536,17 @@ export default function StudentDashboardPage() {
                           className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20"
                         >
                           <UploadCloud size={14} />
-                          <span>{assignment.latestSubmissionId ? 'Nộp lại bài' : 'Nộp bài (.zip)'}</span>
+                          <span>{assignment.latestSubmissionId ? 'Resubmit' : 'Submit (.zip)'}</span>
                         </button>
 
-                        {/* Xem kết quả bài nộp chi tiết */}
+                        {/* Xem kết quả submission chi tiết */}
                         {assignment.latestSubmissionId && (
                           <button
                             onClick={() => navigate(`/submissions/${assignment.latestSubmissionId}/results`)}
                             className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs px-3 py-2.5 rounded-xl transition"
-                            title="Xem kết quả chi tiết"
+                            title="View detailed results"
                           >
-                            <span>Chi tiết</span>
+                            <span>Details</span>
                             <ArrowRight size={14} />
                           </button>
                         )}
@@ -551,13 +560,13 @@ export default function StudentDashboardPage() {
         )}
       </main>
 
-      {/* Modal Nộp bài Upload (.zip) Thật */}
+      {/* Modal Nộp assignments Upload (.zip) Thật */}
       {selectedAssignment && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Nộp bài tập trực tuyến</h3>
+                <h3 className="text-base font-bold text-slate-900">Submit assignment online</h3>
                 <p className="text-xs text-slate-500 mt-0.5">{selectedAssignment.title}</p>
               </div>
               <button
@@ -597,16 +606,16 @@ export default function StudentDashboardPage() {
                   <div>
                     <p className="text-xs font-bold text-indigo-900">{fileToUpload.name}</p>
                     <p className="text-[11px] text-indigo-600 mt-0.5">
-                      {(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB • Sẵn sàng tải lên
+                      {(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
                     </p>
                   </div>
                 ) : (
                   <div>
                     <p className="text-xs font-semibold text-slate-800">
-                      Nhấn vào đây để chọn file bài nộp <span className="text-indigo-600">.zip</span>
+                      Click here to select your submission file <span className="text-indigo-600">.zip</span>
                     </p>
                     <p className="text-[11px] text-slate-400 mt-1">
-                      Chỉ chấp nhận .zip • Tối đa 10MB • Tối đa 5 lần nộp (Risk R01)
+                      ZIP files only • 10 MB max • Up to 5 submissions (Risk R01)
                     </p>
                   </div>
                 )}
@@ -636,7 +645,7 @@ export default function StudentDashboardPage() {
                 onClick={() => setSelectedAssignment(null)}
                 className="px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-100 rounded-xl transition"
               >
-                Hủy
+                Cancel
               </button>
               <button
                 disabled={submitting || !fileToUpload}
@@ -644,7 +653,7 @@ export default function StudentDashboardPage() {
                 className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
-                <span>{submitting ? 'Đang tải lên...' : 'Xác nhận nộp bài'}</span>
+                <span>{submitting ? 'Uploading...' : 'Confirm submission'}</span>
               </button>
             </div>
           </div>

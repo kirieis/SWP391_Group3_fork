@@ -30,17 +30,24 @@ interface ClassItem {
   id: string;
   classCode: string;
   _count?: { students?: number };
+  students?: Array<{
+    student?: {
+      studentCode?: string;
+      user?: { fullName?: string; email?: string };
+    };
+  }>;
   [key: string]: unknown;
 }
 
-// Kiểu dữ liệu bài tập từ backend
+// Kiểu dữ liệu assignments từ backend
 interface AssignmentItem {
   id: string;
   title: string;
+  description?: string | null;
   [key: string]: unknown;
 }
 
-// Kiểu dữ liệu cặp nghi vấn đạo văn từ analytics
+// Kiểu dữ liệu pairs nghi vấn đạo văn từ analytics
 interface PlagiarismMatchItem {
   id: string;
   similarityPercent: number;
@@ -95,8 +102,9 @@ export default function LecturerDashboardPage() {
   const [classesError, setClassesError] = useState<string>('');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [expandedStudentList, setExpandedStudentList] = useState<boolean>(false);
 
-  // Trạng thái Bài tập
+  // Trạng thái Assignment
   const [assignmentsLoading, setAssignmentsLoading] = useState<boolean>(false);
   const [assignmentsError, setAssignmentsError] = useState<string>('');
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
@@ -125,7 +133,7 @@ export default function LecturerDashboardPage() {
   const [creatingClass, setCreatingClass] = useState<boolean>(false);
   const [createClassError, setCreateClassError] = useState<string>('');
 
-  // Modal Import Excel Sinh viên
+  // Modal Import Excel Student
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [importing, setImporting] = useState<boolean>(false);
@@ -162,7 +170,7 @@ export default function LecturerDashboardPage() {
       setAppeals(res.data);
       setPendingAppealsCount(res.data.length);
     } else {
-      setAppealsError(res.message || 'Không thể tải danh sách khiếu nại.');
+      setAppealsError(res.message || 'Unable to load appeals.');
       setAppeals([]);
     }
   };
@@ -196,9 +204,9 @@ export default function LecturerDashboardPage() {
         status: resolveStatus,
         lecturerResponse:
           resolveFeedback.trim() ||
-          (resolveStatus === 'RESOLVED' ? 'Chấp thuận khiếu nại' : 'Bác bỏ khiếu nại'),
+          (resolveStatus === 'RESOLVED' ? 'Appeal approved' : 'Appeal rejected'),
         ...(parsedScore !== undefined && { newScore: parsedScore }),
-        reasonForScoreChange: resolveFeedback.trim() || 'Điều chỉnh điểm sau phúc khảo',
+        reasonForScoreChange: resolveFeedback.trim() || 'Score adjusted after review',
       }),
     });
 
@@ -207,7 +215,7 @@ export default function LecturerDashboardPage() {
       setResolveModalAppeal(null);
       loadPendingAppeals();
     } else {
-      setResolveError(res.message || 'Không thể xử lý khiếu nại. Vui lòng thử lại.');
+      setResolveError(res.message || 'Unable to process the appeal. Please try again.');
     }
   };
 
@@ -221,7 +229,7 @@ export default function LecturerDashboardPage() {
     if (res.success && res.data) {
       setAnalytics(res.data);
     } else {
-      setAnalyticsError(res.message || 'Không thể tải số liệu thống kê bài nộp.');
+      setAnalyticsError(res.message || 'Unable to load submission analytics.');
       setAnalytics(null);
     }
   };
@@ -244,7 +252,7 @@ export default function LecturerDashboardPage() {
         setAnalytics(null);
       }
     } else {
-      setAssignmentsError(res.message || 'Không thể tải danh sách bài tập của lớp.');
+      setAssignmentsError(res.message || 'Unable to load assignments for this class.');
       setAssignments([]);
       setSelectedAssignmentId('');
       setAnalytics(null);
@@ -269,7 +277,7 @@ export default function LecturerDashboardPage() {
         setAnalytics(null);
       }
     } else {
-      setClassesError(res.message || 'Không thể tải danh sách lớp học.');
+      setClassesError(res.message || 'Unable to load classes.');
       setClasses([]);
     }
   };
@@ -282,8 +290,9 @@ export default function LecturerDashboardPage() {
   };
 
   const handleSelectClass = (classId: string) => {
+    setExpandedStudentList(false);
     setSelectedClassId(classId);
-    // Xóa ngay dữ liệu bài tập và số liệu thống kê của lớp cũ để tránh lưu vết sai lệch
+    // Xóa ngay dữ liệu assignments và số liệu thống kê của lớp cũ để tránh lưu vết sai lệch
     setAssignments([]);
     setSelectedAssignmentId('');
     setAnalytics(null);
@@ -309,10 +318,10 @@ export default function LecturerDashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Tạo Lớp học mới qua POST /classes
+  // 2. Create a class qua POST /classes
   const handleCreateClass = async () => {
     if (!newClassCode.trim()) {
-      setCreateClassError('Vui lòng nhập mã lớp học (ví dụ: SE1801-SWP391).');
+      setCreateClassError('Please enter a class code (e.g. SE1801-SWP391).');
       return;
     }
     setCreatingClass(true);
@@ -329,14 +338,14 @@ export default function LecturerDashboardPage() {
       setNewClassCode('');
       loadClasses();
     } else {
-      setCreateClassError(res.message || 'Không thể tạo lớp học. Vui lòng thử lại.');
+      setCreateClassError(res.message || 'Unable to create the class. Please try again.');
     }
   };
 
-  // 3. Xử lý Import Excel Sinh viên Thật qua POST /classes/:classId/import-students
+  // 3. Xử lý Import Excel Student Thật qua POST /classes/:classId/import-students
   const handleImportExcel = async () => {
     if (!selectedClassId || !excelFile) {
-      setImportMessage({ type: 'error', text: 'Vui lòng chọn lớp học và file Excel (.xlsx).' });
+      setImportMessage({ type: 'error', text: 'Please select a class and an Excel file (.xlsx).' });
       return;
     }
     setImporting(true);
@@ -352,19 +361,19 @@ export default function LecturerDashboardPage() {
 
     setImporting(false);
     if (res.success) {
-      setImportMessage({ type: 'success', text: res.message || 'Import danh sách sinh viên thành công!' });
+      setImportMessage({ type: 'success', text: res.message || 'Student list imported successfully!' });
       setExcelFile(null);
       loadClasses();
     } else {
-      setImportMessage({ type: 'error', text: res.message || 'Import thất bại (Toàn bộ đã được Rollback).' });
+      setImportMessage({ type: 'error', text: res.message || 'Import failed (all changes were rolled back).' });
     }
   };
 
-  // Sinh bản nháp bằng AI. Giảng viên vẫn phải rà soát và bấm Tạo đề bài để lưu.
+  // Sinh bản nháp bằng AI. Lecturer vẫn phải rà soát và bấm Create assignment để lưu.
   const handleGenerateAssignment = async () => {
     const topic = generationTopic.trim();
     if (!topic) {
-      setGenerationNotice({ type: 'error', text: 'Vui lòng nhập chủ đề trước khi yêu cầu AI sinh đề.' });
+      setGenerationNotice({ type: 'error', text: 'Please enter a topic before asking AI to generate an assignment.' });
       return;
     }
 
@@ -382,13 +391,13 @@ export default function LecturerDashboardPage() {
     setGeneratingAssignment(false);
 
     if (!res.success || !res.data) {
-      setGenerationNotice({ type: 'error', text: res.message || 'AI chưa thể sinh đề. Vui lòng thử lại.' });
+      setGenerationNotice({ type: 'error', text: res.message || 'AI could not generate the assignment. Please try again.' });
       return;
     }
 
     const generatedCases = Array.isArray(res.data.testCases) ? res.data.testCases : [];
     if (!res.data.title?.trim() || !res.data.description?.trim() || generatedCases.length === 0) {
-      setGenerationNotice({ type: 'error', text: 'AI trả về đề chưa đầy đủ. Hãy thử lại hoặc nhập đề thủ công.' });
+      setGenerationNotice({ type: 'error', text: 'AI returned an incomplete assignment. Try again or enter it manually.' });
       return;
     }
 
@@ -417,17 +426,17 @@ export default function LecturerDashboardPage() {
     setNewTitle(res.data.title.trim());
     setNewDescription(res.data.description.trim());
     setTestCases(mappedCases);
-    setGenerationNotice({ type: 'success', text: `Đã sinh bản nháp gồm ${mappedCases.length} test case. Hãy kiểm tra kỹ input/output trước khi lưu.` });
+    setGenerationNotice({ type: 'success', text: `Generated a draft with ${mappedCases.length} test cases. Review the input/output carefully before saving.` });
   };
 
   // 4. Xử lý Tạo Assignment Mới Thật qua POST /assignments
   const handleCreateAssignment = async () => {
     if (!newTitle.trim() || !selectedClassId) {
-      setCreateAssignmentError('Vui lòng điền tiêu đề bài tập và chọn lớp học.');
+      setCreateAssignmentError('Please enter an assignment title and select a class.');
       return;
     }
     if (!newDeadline) {
-      setCreateAssignmentError('Vui lòng thiết lập hạn nộp bài.');
+      setCreateAssignmentError('Please set an assignment deadline.');
       return;
     }
 
@@ -456,7 +465,7 @@ export default function LecturerDashboardPage() {
       setTestCases([{ inputData: '', expectedOutput: '', scoreWeight: 1 }]);
       loadAssignmentsForClass(selectedClassId);
     } else {
-      setCreateAssignmentError(res.message || 'Lỗi khi tạo đề bài tập.');
+      setCreateAssignmentError(res.message || 'Unable to create the assignment.');
     }
   };
 
@@ -485,14 +494,14 @@ export default function LecturerDashboardPage() {
 
           <nav className="space-y-1 text-xs font-medium">
             {[
-              { id: 'DASHBOARD', label: 'Bảng tổng quan', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
-              { id: 'CREATE_CLASS', label: 'Tạo lớp học mới', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
-              { id: 'CREATE_ASSIGNMENT', label: 'Tạo bài tập mới', icon: PlusCircle, action: () => setShowCreateModal(true) },
-              { id: 'IMPORT_STUDENTS', label: 'Nhập sinh viên (Excel)', icon: Upload, action: () => setShowImportModal(true) },
+              { id: 'DASHBOARD', label: 'Dashboard', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
+              { id: 'CREATE_CLASS', label: 'Create new class', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
+              { id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => setShowCreateModal(true) },
+              { id: 'IMPORT_STUDENTS', label: 'Import students (Excel)', icon: Upload, action: () => setShowImportModal(true) },
               { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
               {
                 id: 'APPEALS',
-                label: 'Hộp thư phúc khảo',
+                label: 'Appeals inbox',
                 icon: MessageSquare,
                 badge: pendingAppealsCount > 0 ? String(pendingAppealsCount) : undefined,
                 action: () => {
@@ -534,14 +543,14 @@ export default function LecturerDashboardPage() {
           </nav>
         </div>
 
-        {/* Thông tin Giảng viên đăng nhập & Nút Đăng xuất */}
+        {/* Thông tin Lecturer đăng nhập & Nút Sign out */}
         <div className="border-t border-slate-200 pt-4 flex items-center justify-between px-2">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
               {user?.fullName?.charAt(0) || 'GV'}
             </div>
             <div className="min-w-0 max-w-[130px]">
-              <p className="text-xs font-semibold text-slate-800 truncate">{user?.fullName || 'Giảng viên'}</p>
+              <p className="text-xs font-semibold text-slate-800 truncate">{user?.fullName || 'Lecturer'}</p>
               <p className="text-[10px] text-slate-500 truncate">{user?.email || '@fe.edu.vn'}</p>
             </div>
           </div>
@@ -552,7 +561,7 @@ export default function LecturerDashboardPage() {
               navigate('/login', { replace: true });
             }}
             className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition"
-            title="Đăng xuất"
+            title="Sign out"
           >
             <LogOut size={16} />
           </button>
@@ -565,10 +574,10 @@ export default function LecturerDashboardPage() {
           <div className="flex items-center gap-3">
             {activeTab === 'DASHBOARD' ? (
               <>
-                <label className="text-xs text-slate-500">Lớp học:</label>
+                <label className="text-xs text-slate-500">Class:</label>
                 {classesLoading ? (
                   <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                    <Loader2 size={12} className="animate-spin" /> Đang tải...
+                    <Loader2 size={12} className="animate-spin" /> Loading...
                   </span>
                 ) : classes.length > 0 ? (
                   <select
@@ -578,7 +587,7 @@ export default function LecturerDashboardPage() {
                   >
                     {classes.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.classCode} ({c._count?.students || 0} SV)
+                        {c.classCode} ({c._count?.students || 0} students)
                       </option>
                     ))}
                   </select>
@@ -587,14 +596,14 @@ export default function LecturerDashboardPage() {
                     onClick={() => setShowCreateClassModal(true)}
                     className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
                   >
-                    <Plus size={13} /> Tạo lớp học đầu tiên
+                    <Plus size={13} /> Create your first class
                   </button>
                 )}
 
-                {/* Dropdown chọn bài tập */}
+                {/* Dropdown chọn assignments */}
                 {assignments.length > 0 && (
                   <>
-                    <label className="text-xs text-slate-500 ml-2">Bài tập:</label>
+                    <label className="text-xs text-slate-500 ml-2">Assignment:</label>
                     <select
                       value={selectedAssignmentId}
                       onChange={(e) => handleSelectAssignment(e.target.value)}
@@ -615,12 +624,12 @@ export default function LecturerDashboardPage() {
                   onClick={() => setActiveTab('DASHBOARD')}
                   className="text-xs text-slate-500 hover:text-slate-800 font-medium transition"
                 >
-                  Bảng tổng quan
+                  Dashboard
                 </button>
                 <span className="text-xs text-slate-300">/</span>
                 <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
                   <MessageSquare size={14} className="text-indigo-600" />
-                  <span>Hộp thư phúc khảo</span>
+                  <span>Appeals inbox</span>
                 </span>
               </div>
             ) : (
@@ -629,7 +638,7 @@ export default function LecturerDashboardPage() {
                   onClick={() => setActiveTab('DASHBOARD')}
                   className="text-xs text-slate-500 hover:text-slate-800 font-medium transition"
                 >
-                  Bảng tổng quan
+                  Dashboard
                 </button>
                 <span className="text-xs text-slate-300">/</span>
                 <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
@@ -640,20 +649,56 @@ export default function LecturerDashboardPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition"
-            >
-              <span>Xem góc nhìn Sinh viên</span>
-              <ExternalLink size={12} />
-            </button>
-          </div>
+
         </header>
 
         <div className="p-6 space-y-6 max-w-6xl w-full mx-auto">
           {activeTab === 'DASHBOARD' && (
             <>
+              {classes.find((item) => item.id === selectedClassId)?.students && (
+                <section className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedStudentList((expanded) => !expanded)}
+                    className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-slate-50"
+                    aria-expanded={expandedStudentList}
+                  >
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Class student list</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0} enrolled students · Name and student ID
+                      </p>
+                    </div>
+                    <ChevronRight size={18} className={`transition-transform ${expandedStudentList ? 'rotate-90' : ''}`} />
+                  </button>
+                  <div className="px-4 pb-4">
+                    {(classes.find((item) => item.id === selectedClassId)?.students ?? [])
+                      .slice(0, expandedStudentList ? undefined : 20)
+                      .map((enrollment, index) => (
+                        <div key={`${enrollment.student?.studentCode ?? 'student'}-${index}`} className="flex items-center justify-between gap-3 border-t border-slate-100 py-2.5 text-xs">
+                          <span className="font-medium text-slate-800">{enrollment.student?.user?.fullName || 'Name unavailable'}</span>
+                          <span className="font-mono text-slate-500">{enrollment.student?.studentCode || 'ID unavailable'}</span>
+                        </div>
+                      ))}
+                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) === 0 && (
+                      <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">No students enrolled in this class yet.</p>
+                    )}
+                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) > 20 && (
+                      <button type="button" onClick={() => setExpandedStudentList((expanded) => !expanded)} className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800">
+                        {expandedStudentList ? 'Show fewer students' : 'Show all students'}
+                      </button>
+                    )}
+                  </div>
+                </section>
+              )}
+              {assignments.find((item) => item.id === selectedAssignmentId)?.description && (
+                <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900">Assignment description</h3>
+                  <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
+                    {assignments.find((item) => item.id === selectedAssignmentId)?.description}
+                  </p>
+                </section>
+              )}
               {/* TRƯỜNG HỢP 1: Lỗi tải danh sách lớp */}
           {classesError && (
             <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
@@ -663,12 +708,12 @@ export default function LecturerDashboardPage() {
                 onClick={loadClasses}
                 className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700"
               >
-                Thử lại
+                Try again
               </button>
             </div>
           )}
 
-          {/* TRƯỜNG HỢP 1b: Lỗi tải danh sách bài tập */}
+          {/* TRƯỜNG HỢP 1b: Lỗi tải danh sách assignments */}
           {assignmentsError && (
             <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
               <AlertCircle size={24} className="text-rose-600" />
@@ -677,47 +722,47 @@ export default function LecturerDashboardPage() {
                 onClick={() => selectedClassId && loadAssignmentsForClass(selectedClassId)}
                 className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700"
               >
-                Thử lại
+                Try again
               </button>
             </div>
           )}
 
-          {/* TRƯỜNG HỢP 2: Giảng viên chưa có lớp học nào */}
+          {/* TRƯỜNG HỢP 2: Lecturer chưa có lớp học nào */}
           {!classesLoading && !classesError && classes.length === 0 && (
             <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                 <Users size={32} />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Bạn chưa phụ trách lớp học nào</h3>
+              <h3 className="text-sm font-bold text-slate-900">You are not assigned to any classes yet</h3>
               <p className="text-xs text-slate-500 max-w-sm">
-                Hãy tạo lớp học mới để bắt đầu giao bài tập và theo dõi phân tích đạo văn.
+                Create a class to start assigning work and tracking plagiarism analysis.
               </p>
               <button
                 onClick={() => setShowCreateClassModal(true)}
                 className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
               >
                 <Plus size={14} />
-                <span>Tạo lớp học mới</span>
+                <span>Create new class</span>
               </button>
             </div>
           )}
 
-          {/* TRƯỜNG HỢP 3: Có lớp học nhưng lớp chưa có bài tập nào */}
+          {/* TRƯỜNG HỢP 3: Có lớp học nhưng lớp chưa có assignments nào */}
           {!classesLoading && !classesError && classes.length > 0 && !assignmentsLoading && assignments.length === 0 && (
             <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                 <FileText size={32} />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Lớp học này chưa có bài tập nào</h3>
+              <h3 className="text-sm font-bold text-slate-900">This class has no assignments yet</h3>
               <p className="text-xs text-slate-500 max-w-sm">
-                Hãy tạo bài tập lập trình đầu tiên để sinh viên nộp bài chấm tự động qua AST Engine.
+                Create the first programming assignment so students can submit work for automatic grading through the AST Engine.
               </p>
               <button
                 onClick={() => setShowCreateModal(true)}
                 className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
               >
                 <PlusCircle size={14} />
-                <span>Tạo bài tập cho lớp</span>
+                <span>Create assignment for class</span>
               </button>
             </div>
           )}
@@ -726,7 +771,7 @@ export default function LecturerDashboardPage() {
           {analyticsLoading && (
             <div className="p-16 text-center text-slate-500 text-xs flex items-center justify-center gap-2 bg-white rounded-2xl border border-slate-200 shadow-sm">
               <Loader2 size={18} className="animate-spin text-indigo-600" />
-              <span>Đang tính toán số liệu thống kê thời gian thực từ Database &amp; AST Engine...</span>
+              <span>Calculating real-time analytics from the database and AST Engine...</span>
             </div>
           )}
 
@@ -739,7 +784,7 @@ export default function LecturerDashboardPage() {
                 onClick={() => selectedAssignmentId && loadAnalytics(selectedAssignmentId)}
                 className="mt-1 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl"
               >
-                Thử lại
+                Try again
               </button>
             </div>
           )}
@@ -751,42 +796,42 @@ export default function LecturerDashboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center justify-between text-slate-500 mb-2">
-                    <span className="text-xs font-medium">Tổng sinh viên lớp</span>
+                    <span className="text-xs font-medium">Total students</span>
                     <Users size={16} className="text-blue-600" />
                   </div>
                   <p className="text-2xl font-bold text-slate-900">{analytics?.stats?.totalActiveStudents ?? 0}</p>
-                  <p className="text-[11px] text-emerald-600 mt-1">Đồng bộ từ CSDL</p>
+                  <p className="text-[11px] text-emerald-600 mt-1">Synced from database</p>
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center justify-between text-slate-500 mb-2">
-                    <span className="text-xs font-medium">Số bài đã nộp</span>
+                    <span className="text-xs font-medium">Submissions</span>
                     <FileText size={16} className="text-indigo-600" />
                   </div>
                   <p className="text-2xl font-bold text-slate-900">
                     {analytics?.stats?.submittedCount ?? 0} / {analytics?.stats?.totalActiveStudents ?? 0}
                   </p>
                   <p className="text-[11px] text-indigo-600 mt-1">
-                    Tỷ lệ: {analytics?.stats?.submissionRate ?? 0}%
+                    Rate: {analytics?.stats?.submissionRate ?? 0}%
                   </p>
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center justify-between text-slate-500 mb-2">
-                    <span className="text-xs font-medium">Điểm trung bình</span>
+                    <span className="text-xs font-medium">Average score</span>
                     <TrendingUp size={16} className="text-emerald-600" />
                   </div>
                   <p className="text-2xl font-bold text-slate-900">{analytics?.stats?.averageScore ?? 0}</p>
-                  <p className="text-[11px] text-emerald-600 mt-1">Hệ thống Sandbox</p>
+                  <p className="text-[11px] text-emerald-600 mt-1">Sandbox system</p>
                 </div>
 
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <div className="flex items-center justify-between text-slate-500 mb-2">
-                    <span className="text-xs font-medium">Cặp nghi vấn đạo văn</span>
+                    <span className="text-xs font-medium">Suspected plagiarism pairs</span>
                     <AlertOctagon size={16} className="text-rose-600" />
                   </div>
                   <p className="text-2xl font-bold text-rose-600">
-                    {analytics?.topPlagiarismMatches?.length ?? 0} cặp
+                    {analytics?.topPlagiarismMatches?.length ?? 0} pairs
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">AST Winnowing Engine</p>
                 </div>
@@ -798,10 +843,10 @@ export default function LecturerDashboardPage() {
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                       <AlertOctagon size={16} className="text-rose-600" />
-                      <span>Bảng so khớp đạo văn AST (Winnowing)</span>
+                      <span>AST Plagiarism Matches (Winnowing)</span>
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Dữ liệu so khớp trực tiếp từ AST Engine (port 8000) lưu tại bảng PLAGIARISM_MATCHES
+                      Match data from the AST Engine (port 8000), stored in PLAGIARISM_MATCHES
                     </p>
                   </div>
                 </div>
@@ -810,10 +855,10 @@ export default function LecturerDashboardPage() {
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                        <th className="py-3 px-3">Cặp sinh viên nghi vấn</th>
-                        <th className="py-3 px-3 text-center">Tỷ lệ tương đồng AST</th>
-                        <th className="py-3 px-3 text-center">Phân loại</th>
-                        <th className="py-3 px-3 text-right">Chi tiết</th>
+                        <th className="py-3 px-3">Suspected student pairs</th>
+                        <th className="py-3 px-3 text-center">AST similarity</th>
+                        <th className="py-3 px-3 text-center">Classification</th>
+                        <th className="py-3 px-3 text-right">Details</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -838,7 +883,7 @@ export default function LecturerDashboardPage() {
                               <td className="py-3.5 px-3 text-center">
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${LEVEL_STYLE[level].solid}`}>
                                   {LEVEL_STYLE[level].label}
-                                  {level === 'DANGER' ? ' (Giữ điểm)' : ''}
+                                  {level === 'DANGER' ? ' (Score withheld)' : ''}
                                 </span>
                               </td>
                               <td className="py-3.5 px-3 text-right">
@@ -846,7 +891,7 @@ export default function LecturerDashboardPage() {
                                   onClick={() => navigate(`/lecturer/plagiarism/${item.id}`)}
                                   className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium text-xs hover:underline"
                                 >
-                                  <span>Xem bài đối chiếu</span>
+                                  <span>View comparison</span>
                                   <ChevronRight size={14} />
                                 </button>
                               </td>
@@ -856,7 +901,7 @@ export default function LecturerDashboardPage() {
                       ) : (
                         <tr>
                           <td colSpan={4} className="py-8 text-center text-slate-400">
-                            Chưa phát hiện cặp trùng lặp nào trong bài tập này.
+                            No matching pairs were found for this assignment.
                           </td>
                         </tr>
                       )}
@@ -877,15 +922,15 @@ export default function LecturerDashboardPage() {
               <div>
                 <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <MessageSquare size={18} className="text-indigo-600" />
-                  <span>Hộp thư Phúc khảo &amp; Khiếu nại</span>
+                  <span>Appeals &amp; Review Inbox</span>
                   {pendingAppealsCount > 0 && (
                     <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold border border-rose-200">
-                      {pendingAppealsCount} đơn chờ duyệt
+                      {pendingAppealsCount} pending appeals
                     </span>
                   )}
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Xem xét và giải quyết các khiếu nại về điểm số hoặc giải trình nghi vấn đạo văn của sinh viên
+                  Review and resolve score appeals or student explanations regarding suspected plagiarism.
                 </p>
               </div>
               <button
@@ -894,7 +939,7 @@ export default function LecturerDashboardPage() {
                 className="self-start sm:self-auto text-xs px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 transition"
               >
                 {appealsLoading ? <Loader2 size={13} className="animate-spin" /> : null}
-                <span>Làm mới danh sách</span>
+                <span>Refresh list</span>
               </button>
             </div>
 
@@ -902,7 +947,7 @@ export default function LecturerDashboardPage() {
             {appealsLoading && (
               <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
                 <Loader2 size={24} className="animate-spin text-indigo-600" />
-                <span>Đang tải danh sách khiếu nại từ hệ thống...</span>
+                <span>Loading appeals from the system...</span>
               </div>
             )}
 
@@ -915,7 +960,7 @@ export default function LecturerDashboardPage() {
                   onClick={loadPendingAppeals}
                   className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700 font-medium"
                 >
-                  Thử lại
+                  Try again
                 </button>
               </div>
             )}
@@ -927,8 +972,8 @@ export default function LecturerDashboardPage() {
                   <CheckCircle2 size={26} />
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800">Hộp thư phúc khảo trống</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">Hiện tại không có sinh viên nào gửi đơn khiếu nại cần xử lý.</p>
+                  <h4 className="text-sm font-bold text-slate-800">No appeals yet</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">There are no student appeals requiring action right now.</p>
                 </div>
               </div>
             )}
@@ -937,16 +982,16 @@ export default function LecturerDashboardPage() {
             {!appealsLoading && !appealsError && appeals.length > 0 && (
               <div className="divide-y divide-slate-100 mt-2">
                 {appeals.map((appeal) => {
-                  const studentName = appeal.student?.user?.fullName || 'Sinh viên';
+                  const studentName = appeal.student?.user?.fullName || 'Student';
                   const studentCode = appeal.student?.studentCode || 'N/A';
                   const studentEmail = appeal.student?.user?.email || '';
-                  const assignmentTitle = appeal.submission?.assignment?.title || 'Bài tập';
+                  const assignmentTitle = appeal.submission?.assignment?.title || 'Assignment';
                   const currentScore =
                     appeal.submission?.totalScore != null
                       ? Number(appeal.submission.totalScore).toFixed(1)
-                      : 'Chưa có';
+                      : 'Not available';
                   const dateStr = appeal.createdAt
-                    ? new Date(appeal.createdAt).toLocaleString('vi-VN')
+                    ? new Date(appeal.createdAt).toLocaleString('en-US')
                     : '';
 
                   return (
@@ -965,14 +1010,14 @@ export default function LecturerDashboardPage() {
                           </div>
 
                           <div className="flex items-center gap-3 text-xs text-slate-600">
-                            <span>Bài tập: <strong className="text-slate-800">{assignmentTitle}</strong></span>
+                            <span>Assignment: <strong className="text-slate-800">{assignmentTitle}</strong></span>
                             <span>•</span>
-                            <span>Điểm hiện tại: <strong className="text-indigo-600">{currentScore}</strong></span>
+                            <span>Current score: <strong className="text-indigo-600">{currentScore}</strong></span>
                           </div>
 
                           <div className="mt-2 p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl text-xs text-amber-950">
                             <p className="font-semibold text-[11px] text-amber-800 mb-1 flex items-center gap-1">
-                              <MessageSquare size={12} /> Lý do khiếu nại của sinh viên:
+                              <MessageSquare size={12} /> Student appeal reason:
                             </p>
                             <p className="whitespace-pre-wrap leading-relaxed">{appeal.reason}</p>
                           </div>
@@ -985,21 +1030,21 @@ export default function LecturerDashboardPage() {
                             className="px-3 py-1.5 text-xs rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium flex items-center gap-1 transition"
                           >
                             <ExternalLink size={12} />
-                            <span>Xem bài nộp</span>
+                            <span>View submission</span>
                           </button>
                           <button
                             onClick={() => handleOpenResolveModal(appeal, 'RESOLVED')}
                             className="px-3 py-1.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1 transition shadow-sm"
                           >
                             <CheckCircle2 size={13} />
-                            <span>Duyệt &amp; Sửa điểm</span>
+                            <span>Approve &amp; adjust score</span>
                           </button>
                           <button
                             onClick={() => handleOpenResolveModal(appeal, 'REJECTED')}
                             className="px-2.5 py-1.5 text-xs rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-600 font-semibold flex items-center gap-1 transition"
                           >
                             <X size={13} />
-                            <span>Bác bỏ</span>
+                            <span>Reject</span>
                           </button>
                         </div>
                       </div>
@@ -1022,14 +1067,14 @@ export default function LecturerDashboardPage() {
               </div>
               <div>
                 <h2 className="text-base font-bold text-slate-900">Git Teamwork Analytics</h2>
-                <p className="text-xs text-slate-500">Phân tích mức độ đóng góp mã nguồn và phối hợp làm việc nhóm qua Git</p>
+                <p className="text-xs text-slate-500">Analyze source-code contributions and teamwork through Git.</p>
               </div>
             </div>
             <div className="p-12 text-center text-xs text-slate-500 space-y-2">
               <GitBranch size={32} className="mx-auto text-slate-400" />
-              <p className="font-semibold text-slate-700">Dữ liệu phân tích Git đang được xử lý</p>
+              <p className="font-semibold text-slate-700">Git analytics are being processed</p>
               <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-                Hệ thống đang tích hợp với webhook Git repository của lớp học để đo lường số commit, tần suất code và mức độ đóng góp của từng thành viên.
+                The system is integrating with the class Git repository webhook to measure commits, coding frequency, and each member’s contribution.
               </p>
             </div>
           </div>
@@ -1043,7 +1088,7 @@ export default function LecturerDashboardPage() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900">Tạo Lớp học mới</h3>
+              <h3 className="text-base font-bold text-slate-900">Create a class</h3>
               <button onClick={() => setShowCreateClassModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={18} />
               </button>
@@ -1051,10 +1096,10 @@ export default function LecturerDashboardPage() {
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-medium text-slate-700 block mb-1">Mã lớp học (Class Code):</label>
+                <label className="font-medium text-slate-700 block mb-1">Class code:</label>
                 <input
                   type="text"
-                  placeholder="Ví dụ: SE1801-SWP391"
+                  placeholder="Example: SE1801-SWP391"
                   value={newClassCode}
                   onChange={(e) => setNewClassCode(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 font-mono"
@@ -1075,7 +1120,7 @@ export default function LecturerDashboardPage() {
                 onClick={() => setShowCreateClassModal(false)}
                 className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
               >
-                Hủy
+                Cancel
               </button>
               <button
                 disabled={creatingClass || !newClassCode.trim()}
@@ -1083,7 +1128,7 @@ export default function LecturerDashboardPage() {
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
               >
                 {creatingClass ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                <span>{creatingClass ? 'Đang tạo...' : 'Tạo lớp'}</span>
+                <span>{creatingClass ? 'Creating...' : 'Create class'}</span>
               </button>
             </div>
           </div>
@@ -1095,13 +1140,13 @@ export default function LecturerDashboardPage() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900">Import danh sách Sinh viên (.xlsx)</h3>
+              <h3 className="text-base font-bold text-slate-900">Import student list (.xlsx)</h3>
               <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={18} />
               </button>
             </div>
             <p className="text-xs text-slate-500">
-              Sử dụng Database Transaction (NFR-12 &amp; US06). File Excel chứa cột: Email, MSSV (StudentCode), Họ tên.
+              Uses a database transaction (NFR-12 &amp; US06). The Excel file must contain: Email, StudentCode, Full Name.
             </p>
 
             <div
@@ -1122,7 +1167,7 @@ export default function LecturerDashboardPage() {
               />
               <FileSpreadsheet className="mx-auto text-emerald-600 mb-2" size={32} />
               <p className="text-xs font-semibold text-slate-800">
-                {excelFile ? excelFile.name : 'Chọn file Excel (.xlsx)'}
+                {excelFile ? excelFile.name : 'Choose Excel file (.xlsx)'}
               </p>
             </div>
 
@@ -1145,7 +1190,7 @@ export default function LecturerDashboardPage() {
                 onClick={() => setShowImportModal(false)}
                 className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
               >
-                Đóng
+                Close
               </button>
               <button
                 disabled={importing || !excelFile}
@@ -1153,7 +1198,7 @@ export default function LecturerDashboardPage() {
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
               >
                 {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                <span>{importing ? 'Đang xử lý...' : 'Xác nhận Import'}</span>
+                <span>{importing ? 'Processing...' : 'Confirm import'}</span>
               </button>
             </div>
           </div>
@@ -1165,7 +1210,7 @@ export default function LecturerDashboardPage() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="text-base font-bold text-slate-900">Tạo đề bài tập mới</h3>
+              <h3 className="text-base font-bold text-slate-900">Create assignment</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={18} />
               </button>
@@ -1175,15 +1220,15 @@ export default function LecturerDashboardPage() {
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
                 <div className="flex items-center gap-2 font-semibold text-indigo-900">
                   <Sparkles size={15} />
-                  <span>AI hỗ trợ sinh đề bài</span>
+                  <span>AI-assisted assignment generation</span>
                 </div>
-                <label className="font-medium text-slate-700 block">Chủ đề / yêu cầu đề bài:</label>
+                <label className="font-medium text-slate-700 block">Topic / assignment requirements:</label>
                 <textarea
                   rows={2}
                   value={generationTopic}
                   onChange={(e) => setGenerationTopic(e.target.value)}
                   maxLength={500}
-                  placeholder="Ví dụ: Viết chương trình quản lý danh sách sinh viên bằng OOP, tìm kiếm theo mã sinh viên..."
+                  placeholder="Example: Build an OOP student list manager with search by student ID..."
                   className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 resize-y"
                 />
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -1191,11 +1236,11 @@ export default function LecturerDashboardPage() {
                     value={generationDifficulty}
                     onChange={(e) => setGenerationDifficulty(e.target.value as 'easy' | 'medium' | 'hard')}
                     className="sm:w-36 bg-white border border-slate-200 rounded-xl p-2.5 outline-none"
-                    aria-label="Độ khó đề bài do AI sinh"
+                    aria-label="AI-generated assignment difficulty"
                   >
-                    <option value="easy">Dễ</option>
-                    <option value="medium">Trung bình</option>
-                    <option value="hard">Khó</option>
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
                   </select>
                   <button
                     type="button"
@@ -1204,7 +1249,7 @@ export default function LecturerDashboardPage() {
                     className="flex-1 px-3 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {generatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    {generatingAssignment ? 'AI đang sinh đề...' : 'Sinh đề bằng AI'}
+                    {generatingAssignment ? 'AI is generating the assignment...' : 'Generate with AI'}
                   </button>
                 </div>
                 {generationNotice && (
@@ -1216,10 +1261,10 @@ export default function LecturerDashboardPage() {
               </div>
 
               <div>
-                <label className="font-medium text-slate-700 block mb-1">Tiêu đề bài tập (*):</label>
+                <label className="font-medium text-slate-700 block mb-1">Assignment title (*):</label>
                 <input
                   type="text"
-                  placeholder="Ví dụ: Assignment 1: Java OOP Car Rental"
+                  placeholder="Example: Assignment 1: Java OOP Car Rental"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500"
@@ -1227,10 +1272,10 @@ export default function LecturerDashboardPage() {
               </div>
 
               <div>
-                <label className="font-medium text-slate-700 block mb-1">Mô tả bài tập:</label>
+                <label className="font-medium text-slate-700 block mb-1">Assignment description:</label>
                 <textarea
                   rows={2}
-                  placeholder="Mô tả yêu cầu bài toán..."
+                  placeholder="Describe the problem requirements..."
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500"
@@ -1239,7 +1284,7 @@ export default function LecturerDashboardPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-medium text-slate-700 block mb-1">Ngôn ngữ (*):</label>
+                  <label className="font-medium text-slate-700 block mb-1">Language (*):</label>
                   <select
                     value={newLanguage}
                     onChange={(e) => setNewLanguage(e.target.value)}
@@ -1252,7 +1297,7 @@ export default function LecturerDashboardPage() {
                 </div>
 
                 <div>
-                  <label className="font-medium text-slate-700 block mb-1">Hạn nộp (*):</label>
+                  <label className="font-medium text-slate-700 block mb-1">Deadline (*):</label>
                   <input
                     type="datetime-local"
                     value={newDeadline}
@@ -1265,13 +1310,13 @@ export default function LecturerDashboardPage() {
               {/* Test Cases cho Sandbox Docker */}
               <div className="pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="font-semibold text-slate-800">Bộ Test Cases (Sandbox):</label>
+                  <label className="font-semibold text-slate-800">Sandbox test cases:</label>
                   <button
                     type="button"
                     onClick={addTestCaseRow}
                     className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
                   >
-                    <Plus size={12} /> Thêm test case
+                    <Plus size={12} /> Add test case
                   </button>
                 </div>
 
@@ -1303,7 +1348,7 @@ export default function LecturerDashboardPage() {
                       <input
                         type="number"
                         min="1"
-                        placeholder="Điểm"
+                        placeholder="Score"
                         value={tc.scoreWeight}
                         onChange={(e) => {
                           const updated = [...testCases];
@@ -1340,7 +1385,7 @@ export default function LecturerDashboardPage() {
                 onClick={() => setShowCreateModal(false)}
                 className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
               >
-                Hủy
+                Cancel
               </button>
               <button
                 disabled={creatingAssignment}
@@ -1348,7 +1393,7 @@ export default function LecturerDashboardPage() {
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
               >
                 {creatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
-                <span>{creatingAssignment ? 'Đang tạo...' : 'Tạo đề bài'}</span>
+                <span>{creatingAssignment ? 'Creating...' : 'Create assignment'}</span>
               </button>
             </div>
           </div>
@@ -1364,12 +1409,12 @@ export default function LecturerDashboardPage() {
                 {resolveStatus === 'RESOLVED' ? (
                   <>
                     <CheckCircle2 size={16} className="text-emerald-600" />
-                    <span>Chấp thuận phúc khảo &amp; Sửa điểm</span>
+                    <span>Approve appeal &amp; adjust score</span>
                   </>
                 ) : (
                   <>
                     <X size={16} className="text-rose-600" />
-                    <span>Bác bỏ khiếu nại</span>
+                    <span>Appeal rejected</span>
                   </>
                 )}
               </h3>
@@ -1382,11 +1427,11 @@ export default function LecturerDashboardPage() {
             </div>
 
             <div className="text-xs text-slate-600 space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60">
-              <p>Sinh viên: <strong className="text-slate-800">{resolveModalAppeal.student?.user?.fullName || 'Sinh viên'}</strong> ({resolveModalAppeal.student?.studentCode || 'N/A'})</p>
-              <p>Bài tập: <strong className="text-slate-800">{resolveModalAppeal.submission?.assignment?.title || 'Bài tập'}</strong></p>
-              <p>Điểm hiện tại: <strong className="text-indigo-600">{resolveModalAppeal.submission?.totalScore != null ? Number(resolveModalAppeal.submission.totalScore).toFixed(1) : 'Chưa có'}</strong></p>
+              <p>Student: <strong className="text-slate-800">{resolveModalAppeal.student?.user?.fullName || 'Student'}</strong> ({resolveModalAppeal.student?.studentCode || 'N/A'})</p>
+              <p>Assignment: <strong className="text-slate-800">{resolveModalAppeal.submission?.assignment?.title || 'Assignment'}</strong></p>
+              <p>Current score: <strong className="text-indigo-600">{resolveModalAppeal.submission?.totalScore != null ? Number(resolveModalAppeal.submission.totalScore).toFixed(1) : 'Not available'}</strong></p>
               <div className="pt-1.5 border-t border-slate-200/60">
-                <span className="text-slate-500 font-medium block mb-0.5">Lý do khiếu nại:</span>
+                <span className="text-slate-500 font-medium block mb-0.5">Appeal reason:</span>
                 <p className="text-[11px] text-amber-900 bg-amber-50/70 p-2 rounded-lg border border-amber-200/60 italic leading-relaxed">
                   &quot;{resolveModalAppeal.reason}&quot;
                 </p>
@@ -1403,7 +1448,7 @@ export default function LecturerDashboardPage() {
             {resolveStatus === 'RESOLVED' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Điểm mới sau phúc khảo (thang điểm 10):
+                  New score after review (out of 10):
                 </label>
                 <input
                   type="number"
@@ -1413,21 +1458,21 @@ export default function LecturerDashboardPage() {
                   value={resolveNewScore}
                   onChange={(e) => setResolveNewScore(e.target.value)}
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-emerald-500 focus:bg-white"
-                  placeholder="Ví dụ: 8.5"
+                  placeholder="Example: 8.5"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">Hệ thống sẽ tự động ghi vết thay đổi điểm vào Score Audit Log theo quy định R03.</p>
+                <p className="text-[10px] text-slate-400 mt-1">The system automatically records score changes in the Score Audit Log under rule R03.</p>
               </div>
             )}
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Phản hồi của giảng viên gửi cho sinh viên:
+                Lecturer response to the student:
               </label>
               <textarea
                 rows={3}
                 value={resolveFeedback}
                 onChange={(e) => setResolveFeedback(e.target.value)}
-                placeholder={resolveStatus === 'RESOLVED' ? "Nhập nhận xét / lý do điều chỉnh điểm..." : "Nhập lý do bác bỏ khiếu nại..."}
+                placeholder={resolveStatus === 'RESOLVED' ? "Enter feedback or the reason for adjusting the score..." : "Enter the reason for rejecting the appeal..."}
                 className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white resize-none"
               />
             </div>
@@ -1439,7 +1484,7 @@ export default function LecturerDashboardPage() {
                 disabled={resolving}
                 className="px-3.5 py-2 text-xs rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-medium"
               >
-                Hủy bỏ
+                Cancel
               </button>
               <button
                 type="button"
@@ -1452,7 +1497,7 @@ export default function LecturerDashboardPage() {
                 }`}
               >
                 {resolving ? <Loader2 size={13} className="animate-spin" /> : null}
-                <span>{resolveStatus === 'RESOLVED' ? 'Xác nhận cập nhật' : 'Xác nhận bác bỏ'}</span>
+                <span>{resolveStatus === 'RESOLVED' ? 'Confirm update' : 'Confirm rejection'}</span>
               </button>
             </div>
           </div>

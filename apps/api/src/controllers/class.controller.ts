@@ -56,6 +56,17 @@ export const getMyClasses = async (req: Request, res: Response) => {
                 where: { lecturerId: user.userId },
                 include: {
                     _count: { select: { students: true, assignments: true } },
+                    students: {
+                        where: { status: "ACTIVE" },
+                        include: {
+                            student: {
+                                include: {
+                                    user: { select: { fullName: true, email: true } },
+                                },
+                            },
+                        },
+                        orderBy: { enrolledAt: "asc" },
+                    },
                 },
             });
             return res.json({ success: true, data: classes });

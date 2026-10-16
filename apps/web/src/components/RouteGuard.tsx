@@ -14,7 +14,7 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
   const token = localStorage.getItem('aita_token');
   const [user, setUser] = useState<StoredUser | null>(getStoredUser);
 
-  // Tất cả hooks phải được gọi trước các early return (Rules of Hooks)
+  // All hooks phải được gọi trước các early return (Rules of Hooks)
   // 2. Xác thực phiên làm việc định kỳ / khôi phục phiên qua GET /api/auth/me
   // Chỉ thực sự gọi API khi token hợp lệ (kiểm tra bằng biến tokenIsValid bên dưới)
   useEffect(() => {
@@ -54,8 +54,8 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
   const currentRole = user?.role || 'STUDENT';
 
   // Điều hướng phân quyền theo SRS:
-  // - Sinh viên vào nhầm trang giảng viên (/lecturer/*) -> đẩy về /dashboard
-  // - Giảng viên vào nhầm trang sinh viên (/dashboard) -> đẩy về /lecturer/dashboard
+  // - Student vào nhầm trang giảng viên (/lecturer/*) -> đẩy về /dashboard
+  // - Lecturer vào nhầm trang sinh viên (/dashboard) -> đẩy về /lecturer/dashboard
   if (allowedRoles && allowedRoles.length > 0) {
     if (!allowedRoles.includes(currentRole)) {
       if (currentRole === 'STUDENT') {
