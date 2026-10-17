@@ -666,18 +666,24 @@ export default function LecturerDashboardPage() {
                     <div>
                       <h3 className="text-sm font-bold text-slate-900">Class student list</h3>
                       <p className="text-xs text-slate-500 mt-1">
-                        {classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0} enrolled students · Name and student ID
+                        {classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0} enrolled students · Student Code and Full Name only
                       </p>
                     </div>
                     <ChevronRight size={18} className={`transition-transform ${expandedStudentList ? 'rotate-90' : ''}`} />
                   </button>
                   <div className="px-4 pb-4">
+                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) > 0 && (
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                        <span>Student Code</span>
+                        <span>Full Name</span>
+                      </div>
+                    )}
                     {(classes.find((item) => item.id === selectedClassId)?.students ?? [])
                       .slice(0, expandedStudentList ? undefined : 20)
                       .map((enrollment, index) => (
                         <div key={`${enrollment.student?.studentCode ?? 'student'}-${index}`} className="flex items-center justify-between gap-3 border-t border-slate-100 py-2.5 text-xs">
-                          <span className="font-medium text-slate-800">{enrollment.student?.user?.fullName || 'Name unavailable'}</span>
-                          <span className="font-mono text-slate-500">{enrollment.student?.studentCode || 'ID unavailable'}</span>
+                          <span className="font-mono font-medium text-slate-700">{enrollment.student?.studentCode || 'ID unavailable'}</span>
+                          <span className="font-semibold text-slate-900">{enrollment.student?.user?.fullName || 'Name unavailable'}</span>
                         </div>
                       ))}
                     {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) === 0 && (
