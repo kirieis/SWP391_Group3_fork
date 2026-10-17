@@ -101,7 +101,7 @@ export async function processGradingPipeline(
           temperature: 0.2,
         });
 
-        let aiFeedbackText = Code dat tieu chuan Clean Code, vuot qua cac test cases.;
+        let aiFeedbackText = Code adheres to clean code standards and passes test cases.;
         if (aiRes.status === AI_REVIEW_DONE && aiRes.data?.content) {
           aiFeedbackText = aiRes.data.content;
         }

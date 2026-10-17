@@ -49,7 +49,7 @@ it("Escape triệt để thẻ đóng và mở của student_code trong code sin
   // Code bên trong student_code không được chứa unescaped tags
   assert(prompt.userPrompt.includes("<!escaped_student_code!>"), "Thẻ đóng lậu phải bị thay thế");
   assert(prompt.userPrompt.includes("<!escaped_student_code_open!>"), "Thẻ mở lậu phải bị thay thế");
-  assert(prompt.userPrompt.endsWith("</student_code>\n\nAnalyze step by step (Chain-of-Thought), then provide scores and comments in Vietnamese."));
+  assert(prompt.userPrompt.endsWith("</student_code>\n\nAnalyze step by step (Chain-of-Thought), then provide scores and comments in English."));
 });
 
 it("Cắt ngắn code nếu vượt quá MAX_CODE_CHARS (8000 ký tự)", () => {

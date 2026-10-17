@@ -372,23 +372,24 @@ export class GradingService {
         const feedbackLines: string[] = [];
 
         if (score >= 90) {
-            feedbackLines.push("🌟 Mã nguồn thực thi xuất sắc, vượt qua toàn bộ các ca kiểm thử chức năng.");
-            feedbackLines.push("✓ Cấu trúc thuật toán tối ưu, logic phân tách rõ ràng và xử lý tốt các trường hợp biên.");
-            feedbackLines.push("✓ Tuân thủ quy chuẩn đặt tên biến và phương thức CamelCase trong Java.");
+            feedbackLines.push("[EXCELLENT] Source code executed flawlessly, passing all functional test cases.");
+            feedbackLines.push("- Optimal algorithmic structure with modular logic handling edge cases cleanly.");
+            feedbackLines.push("- Follows standard Java naming conventions and clean code practices.");
         } else if (score >= 50) {
-            feedbackLines.push(`⚠️ Bài nộp vượt qua ${passedTc}/${totalTc} test cases (${score}/100 điểm).`);
-            feedbackLines.push("• Một số trường hợp biên hoặc định dạng đầu ra chưa khớp hoàn toàn với đặc tả.");
-            feedbackLines.push("• Khuyến nghị: Kiểm tra lại các điều kiện dừng của vòng lặp và xử lý các giá trị đặc biệt.");
+            feedbackLines.push(`[FAIR] Submission passed ${passedTc}/${totalTc} test cases (${score}/100 points).`);
+            feedbackLines.push("- Some edge cases or standard output formatting do not fully match requirements.");
+            feedbackLines.push("- Recommendation: Review loop termination conditions and boundary value logic.");
         } else {
-            feedbackLines.push(`❌ Bài nộp chưa vượt qua các test cases chính (${passedTc}/${totalTc} passed).`);
-            feedbackLines.push("• Vui lòng kiểm tra lại luồng đọc dữ liệu từ Scanner và định dạng đầu ra chuẩn.");
+            feedbackLines.push(`[NEEDS IMPROVEMENT] Submission did not pass key test cases (${passedTc}/${totalTc} passed).`);
+            feedbackLines.push("- Please verify input stream reading (Scanner / BufferedReader) and exact output format.");
+            feedbackLines.push("- Check main class naming, algorithm logic, and edge case handling.");
         }
 
         return feedbackLines.join("\n");
     }
 
     /**
-     * Dọn dẹp thư mục tạm thời
+     * Thu don thu muc tam thoi
      */
     private cleanupTempDir(dir: string): void {
         try {
