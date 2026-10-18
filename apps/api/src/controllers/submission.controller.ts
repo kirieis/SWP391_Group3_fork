@@ -32,7 +32,18 @@ export const submitAssignment = async (req: Request, res: Response) => {
         });
 
         if (!assignment) {
+            if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
             return res.status(404).json({ success: false, message: "Assignment not found." });
+        }
+
+        // Enforce the deadline on the server for both first submissions and resubmissions.
+        // A missing deadline remains open; an expired upload is discarded before returning.
+        if (assignment.deadline && Date.now() > new Date(assignment.deadline).getTime()) {
+            if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+            return res.status(403).json({
+                success: false,
+                message: "The submission deadline has passed. Submissions and resubmissions are no longer accepted.",
+            });
         }
 
         // 2. Kiểm tra Risk R01: Số lần nộp bài của sinh viên cho assignment này

@@ -29,6 +29,7 @@ export interface AssignmentItem {
   score?: number | null;
   latestSubmissionId?: string;
   astCheckStatus?: 'PENDING' | 'DONE' | 'FAILED' | 'NEEDS_REVIEW' | string;
+  isExpired: boolean;
 }
 
 // Hàm xác định nhãn, màu sắc và logic hiển thị trạng thái chuẩn SRS và Prisma schema
@@ -38,6 +39,15 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   showScore: boolean;
   isChecking: boolean;
 } {
+  if (item.status === 'NOT_SUBMITTED' && item.isExpired) {
+    return {
+      badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
+      label: 'N/A',
+      showScore: false,
+      isChecking: false,
+    };
+  }
+
   if (item.status === 'NOT_SUBMITTED') {
     return {
       badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
@@ -206,6 +216,7 @@ export default function StudentDashboardPage() {
           score,
           latestSubmissionId,
           astCheckStatus,
+          isExpired: Boolean(item.deadline && Date.now() > new Date(item.deadline).getTime()),
         };
       });
 
@@ -261,6 +272,11 @@ export default function StudentDashboardPage() {
   const handleSubmitAssignment = async () => {
     if (!selectedAssignment || !fileToUpload) {
       setUploadError('Please select your submission ZIP file.');
+      return;
+    }
+
+    if (selectedAssignment.isExpired || (selectedAssignment.rawDeadline && Date.now() > new Date(selectedAssignment.rawDeadline).getTime())) {
+      setUploadError('The submission deadline has passed. Submissions and resubmissions are no longer accepted.');
       return;
     }
 
@@ -516,7 +532,15 @@ export default function StudentDashboardPage() {
 
                     {/* Trạng thái & Thao tác */}
                     <div className="flex items-center gap-4 self-end md:self-center">
-                      {/* Hiển thị điểm số thật (nếu có và không bị SCORE_WITHHELD) */}
+                      {/* Show N/A when the deadline passed without any submission. */}
+                      {assignment.isExpired && assignment.status === 'NOT_SUBMITTED' && (
+                        <div className="text-right">
+                          <span className="text-xs text-slate-500 block">Result</span>
+                          <span className="text-xl font-bold text-slate-500">N/A</span>
+                        </div>
+                      )}
+
+                      {/* Display the real score when available and not withheld. */}
                       {statusInfo.showScore && (
                         <div className="text-right">
                           <span className="text-xs text-slate-500 block">Result</span>
@@ -541,16 +565,19 @@ export default function StudentDashboardPage() {
                       {/* Các nút hành động */}
                       <div className="flex items-center gap-2">
                         <button
+                          disabled={assignment.isExpired}
+                          title={assignment.isExpired ? 'The submission deadline has passed.' : undefined}
                           onClick={() => {
+                            if (assignment.isExpired) return;
                             setSelectedAssignment(assignment);
                             setFileToUpload(null);
                             setUploadError('');
                             setUploadSuccessMessage('');
                           }}
-                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20"
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
                         >
                           <UploadCloud size={14} />
-                          <span>{assignment.latestSubmissionId ? 'Resubmit' : 'Submit (.zip)'}</span>
+                          <span>{assignment.isExpired ? 'Deadline passed' : assignment.latestSubmissionId ? 'Resubmit' : 'Submit (.zip)'}</span>
                         </button>
 
                         {/* Xem kết quả submission chi tiết */}
@@ -591,7 +618,11 @@ export default function StudentDashboardPage() {
               </button>
             </div>
 
-            {/* Khu vực chọn file */}
+            {selectedAssignment.isExpired && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">The submission deadline has passed. Submissions and resubmissions are no longer accepted.</div>
+            )}
+
+            {/* File selection */}
             <div
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${
@@ -662,7 +693,7 @@ export default function StudentDashboardPage() {
                 Cancel
               </button>
               <button
-                disabled={submitting || !fileToUpload}
+                disabled={submitting || !fileToUpload || selectedAssignment.isExpired}
                 onClick={handleSubmitAssignment}
                 className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5 disabled:opacity-50"
               >
