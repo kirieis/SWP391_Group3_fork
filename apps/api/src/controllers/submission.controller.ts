@@ -19,11 +19,11 @@ export const submitAssignment = async (req: Request, res: Response) => {
         const file = req.file;
 
         if (!studentId) {
-            return res.status(401).json({ success: false, message: "Chưa xác thực danh tính." });
+            return res.status(401).json({ success: false, message: "Unauthorized: User not identified." });
         }
 
         if (!assignmentId || !file) {
-            return res.status(400).json({ success: false, message: "Vui lòng chọn đề bài và đính kèm file bài nộp (.zip)." });
+            return res.status(400).json({ success: false, message: "Please select an assignment and attach your submission (.zip) file." });
         }
 
         // 1. Kiểm tra tồn tại Assignment & Deadline
@@ -32,7 +32,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         });
 
         if (!assignment) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy đề bài." });
+            return res.status(404).json({ success: false, message: "Assignment not found." });
         }
 
         // 2. Kiểm tra Risk R01: Số lần nộp bài của sinh viên cho assignment này
@@ -46,7 +46,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         if (submissionCount >= MAX_SUBMISSION_ATTEMPTS) {
             return res.status(429).json({
                 success: false,
-                message: `Bạn đã đạt giới hạn tối đa ${MAX_SUBMISSION_ATTEMPTS} lần nộp cho bài tập này (Risk R01).`,
+                message: `You have reached the maximum limit of ${MAX_SUBMISSION_ATTEMPTS} submissions for this assignment (Risk R01).`,
             });
         }
         // 3. Tính SHA-256 từ file trên đĩa
@@ -58,7 +58,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         // 4. Kiểm tra Magic bytes của file ZIP (50 4B 03 04)
         if (fileBuffer.length < 4 || fileBuffer[0] !== 0x50 || fileBuffer[1] !== 0x4b || fileBuffer[2] !== 0x03 || fileBuffer[3] !== 0x04) {
             fs.unlinkSync(file.path); // Xóa file rác
-            return res.status(400).json({ success: false, message: "File tải lên không phải là file ZIP hợp lệ (Sai magic bytes)." });
+            return res.status(400).json({ success: false, message: "Uploaded file is not a valid ZIP archive (Invalid magic bytes)." });
         }
 
         // 6. Tạo submission với đường dẫn file đã lưu & AST_CHECK_STATUS = PENDING
@@ -78,7 +78,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
             submissionId: submission.id,
             step: "QUEUED",
             progressPercent: 10,
-            message: "Bài nộp đã được tiếp nhận và đưa vào hàng đợi chấm.",
+            message: "Submission received and enqueued for grading.",
         });
 
         // 7. Chạy toàn bộ pipeline chấm điểm tự động trong nền (Sandbox -> AST -> AI Review -> Hoàn tất điểm)
@@ -94,7 +94,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         // Trả về mã 202 Accepted theo đúng đặc tả US12 — NGAY LẬP TỨC
         return res.status(202).json({
             success: true,
-            message: "Nộp bài thành công! Đang tiến hành chấm tự động.",
+            message: "Submission successful! Automatic grading in progress.",
             data: {
                 submissionId: submission.id,
                 attemptsLeft: MAX_SUBMISSION_ATTEMPTS - (submissionCount + 1),
@@ -103,7 +103,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         });
     } catch (error) {
         console.error("Lỗi submitAssignment:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi nộp bài." });
+        return res.status(500).json({ success: false, message: "Server error during submission." });
     }
 };
 
@@ -127,7 +127,7 @@ export const getMySubmissions = async (req: Request, res: Response) => {
         return res.json({ success: true, data: submissions });
     } catch (error) {
         console.error("Lỗi getMySubmissions:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy danh sách bài nộp." });
+        return res.status(500).json({ success: false, message: "Server error retrieving submission history." });
     }
 };
 
@@ -143,10 +143,10 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
             select: { studentId: true },
         });
         if (!ownerCheck) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy kết quả bài nộp." });
+            return res.status(404).json({ success: false, message: "Submission result not found." });
         }
         if (requestingUser?.role === "STUDENT" && ownerCheck.studentId !== requestingUser.userId) {
-            return res.status(403).json({ success: false, message: "Bạn không có quyền xem bài nộp này." });
+            return res.status(403).json({ success: false, message: "You are not authorized to view this submission." });
         }
 
         const submission = await prisma.submission.findUnique({
@@ -164,7 +164,7 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
         });
 
         if (!submission) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy kết quả bài nộp." });
+            return res.status(404).json({ success: false, message: "Submission result not found." });
         }
 
         /**
@@ -195,7 +195,7 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
         return res.json({ success: true, data: responseData });
     } catch (error) {
         console.error("Lỗi getSubmissionResult:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy kết quả bài nộp." });
+        return res.status(500).json({ success: false, message: "Server error retrieving submission result." });
     }
 };
 
@@ -206,7 +206,7 @@ export const createAppeal = async (req: Request, res: Response) => {
         const { submissionId, reason } = req.body;
 
         if (!studentId || !submissionId || !reason) {
-            return res.status(400).json({ success: false, message: "Vui lòng nhập lý do khiếu nại." });
+            return res.status(400).json({ success: false, message: "Please provide a reason for the appeal." });
         }
 
         const existingAppeal = await prisma.appeal.findUnique({
@@ -214,7 +214,7 @@ export const createAppeal = async (req: Request, res: Response) => {
         });
 
         if (existingAppeal) {
-            return res.status(400).json({ success: false, message: "Bài nộp này đã có đơn khiếu nại trước đó." });
+            return res.status(400).json({ success: false, message: "An appeal has already been submitted for this submission." });
         }
 
         const appeal = await prisma.appeal.create({
@@ -228,12 +228,12 @@ export const createAppeal = async (req: Request, res: Response) => {
 
         return res.status(201).json({
             success: true,
-            message: "Gửi đơn khiếu nại thành công!",
+            message: "Appeal submitted successfully!",
             data: appeal,
         });
     } catch (error) {
         console.error("Lỗi createAppeal:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi tạo khiếu nại." });
+        return res.status(500).json({ success: false, message: "Server error submitting appeal." });
     }
 };
 
@@ -245,7 +245,7 @@ export const resolveAppeal = async (req: Request, res: Response) => {
         const { status, lecturerResponse, newScore, reasonForScoreChange } = req.body;
 
         if (!lecturerId) {
-            return res.status(401).json({ success: false, message: "Chưa xác thực." });
+            return res.status(401).json({ success: false, message: "Unauthorized." });
         }
 
         const appeal = await prisma.appeal.findUnique({
@@ -254,7 +254,7 @@ export const resolveAppeal = async (req: Request, res: Response) => {
         });
 
         if (!appeal) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy đơn khiếu nại." });
+            return res.status(404).json({ success: false, message: "Appeal not found." });
         }
 
         // Xử lý bằng Transaction để đảm bảo tính toàn vẹn (Risk R03)
@@ -286,7 +286,7 @@ export const resolveAppeal = async (req: Request, res: Response) => {
                         editorId: lecturerId,
                         oldScore: oldScore,
                         newScore: Number(newScore),
-                        reason: reasonForScoreChange || lecturerResponse || "Điều chỉnh sau khiếu nại",
+                        reason: reasonForScoreChange || lecturerResponse || "Adjusted after score appeal",
                     },
                 });
             }
@@ -294,11 +294,11 @@ export const resolveAppeal = async (req: Request, res: Response) => {
 
         return res.json({
             success: true,
-            message: "Đã xử lý khiếu nại thành công!",
+            message: "Appeal resolved successfully!",
         });
     } catch (error) {
         console.error("Lỗi resolveAppeal:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi xử lý khiếu nại." });
+        return res.status(500).json({ success: false, message: "Server error resolving appeal." });
     }
 };
 
@@ -336,7 +336,7 @@ export const getPendingAppeals = async (req: Request, res: Response) => {
         return res.json({ success: true, data: appeals });
     } catch (error) {
         console.error("Lỗi getPendingAppeals:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy danh sách khiếu nại." });
+        return res.status(500).json({ success: false, message: "Server error retrieving pending appeals." });
     }
 };
 
@@ -346,7 +346,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
     try {
         const internalKey = req.headers["x-internal-key"];
         if (internalKey !== env.INTERNAL_API_KEY) {
-            return res.status(403).json({ success: false, message: "Từ chối truy cập: Sai hoặc thiếu Internal API Key." });
+            return res.status(403).json({ success: false, message: "Access denied: Invalid or missing Internal API Key." });
         }
 
         const { submissionId } = req.params;
@@ -361,14 +361,14 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             "COMPLETED",                              // Trạng thái hoàn tất trong DB
         ];
         if (status && !ALLOWED_STATUS.includes(status)) {
-            return res.status(400).json({ success: false, message: "Trạng thái chấm điểm không hợp lệ." });
+            return res.status(400).json({ success: false, message: "Invalid grading status." });
         }
 
         // 2. Validate điểm số (Thống nhất chuẩn thang điểm 10)
         if (totalScore !== undefined && totalScore !== null) {
             const scoreNum = Number(totalScore);
             if (!Number.isFinite(scoreNum) || scoreNum < 0 || scoreNum > 10) {
-                return res.status(400).json({ success: false, message: "Điểm số không hợp lệ (Phải từ 0 đến 10)." });
+                return res.status(400).json({ success: false, message: "Invalid score (Must be between 0 and 10)." });
             }
         }
 
@@ -379,7 +379,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
         });
 
         if (!currentSubmission) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy bài nộp." });
+            return res.status(404).json({ success: false, message: "Submission not found." });
         }
 
         // Map trạng thái từ queue-worker sang trạng thái DB chuẩn mà frontend hiểu
@@ -403,13 +403,13 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
                 submissionId,
                 step,
                 progressPercent: progressPercent || 100,
-                message: message || "Đang xử lý kết quả...",
+                message: message || "Processing results...",
             });
         }
 
-        return res.json({ success: true, message: "Đã cập nhật kết quả chấm!", data: updated });
+        return res.json({ success: true, message: "Grading result updated successfully!", data: updated });
     } catch (error) {
         console.error("Lỗi updateSubmissionGradingResult:", error);
-        return res.status(500).json({ success: false, message: "Lỗi khi cập nhật kết quả bài nộp." });
+        return res.status(500).json({ success: false, message: "Server error updating submission result." });
     }
 };

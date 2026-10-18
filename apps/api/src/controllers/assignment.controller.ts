@@ -17,7 +17,7 @@ export const createAssignment = async (req: Request, res: Response) => {
         if (!classId || !title || !language || !deadline) {
             return res.status(400).json({
                 success: false,
-                message: "Vui lòng điền đủ: classId, title, language, deadline.",
+                message: "Please fill in: classId, title, language, deadline.",
             });
         }
 
@@ -44,12 +44,12 @@ export const createAssignment = async (req: Request, res: Response) => {
 
         return res.status(201).json({
             success: true,
-            message: "Tạo bài tập thành công!",
+            message: "Create assignment successfully!",
             data: assignment,
         });
     } catch (error) {
-        console.error("Lỗi createAssignment:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi tạo bài tập." });
+        console.error("Error createAssignment: ", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
     }
 };
 
@@ -61,7 +61,7 @@ export const cloneAssignment = async (req: Request, res: Response) => {
         if (!sourceAssignmentId || !targetClassId || !newDeadline) {
             return res.status(400).json({
                 success: false,
-                message: "Thiếu thông tin sourceAssignmentId, targetClassId hoặc newDeadline.",
+                message: "Missing sourceAssignmentId, targetClassId or newDeadline.",
             });
         }
 
@@ -72,14 +72,14 @@ export const cloneAssignment = async (req: Request, res: Response) => {
         });
 
         if (!source) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy đề bài gốc để sao chép." });
+            return res.status(404).json({ success: false, message: "Assignment not found." });
         }
 
         // Tạo bản sao sang lớp mới
         const cloned = await prisma.assignment.create({
             data: {
                 classId: targetClassId,
-                title: `${source.title} (Bản sao)`,
+                title: `${source.title} (Clone)`,
                 description: source.description,
                 language: source.language,
                 deadline: new Date(newDeadline),
@@ -97,12 +97,12 @@ export const cloneAssignment = async (req: Request, res: Response) => {
 
         return res.status(201).json({
             success: true,
-            message: "Sao chép đề bài thành công!",
+            message: "Clone assignment successfully!",
             data: cloned,
         });
     } catch (error) {
-        console.error("Lỗi cloneAssignment:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi sao chép đề bài." });
+        console.error("Error cloneAssignment: ", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
     }
 };
 
@@ -120,13 +120,13 @@ export const getAssignmentDetail = async (req: Request, res: Response) => {
         });
 
         if (!assignment) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy bài tập." });
+            return res.status(404).json({ success: false, message: "Assignment not found." });
         }
 
         return res.json({ success: true, data: assignment });
     } catch (error) {
-        console.error("Lỗi getAssignmentDetail:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy chi tiết bài tập." });
+        console.error("Error getAssignmentDetail: ", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
     }
 };
 
@@ -209,7 +209,7 @@ export const getAssignments = async (req: Request, res: Response) => {
 
         return res.json({ success: true, data: assignments });
     } catch (error) {
-        console.error("Lỗi getAssignments:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy danh sách bài tập." });
+        console.error("Error getAssignments: ", error);
+        return res.status(500).json({ success: false, message: "Internal server error while getting assignments." });
     }
 };

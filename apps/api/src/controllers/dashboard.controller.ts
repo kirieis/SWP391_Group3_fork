@@ -8,7 +8,7 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
         const { assignmentId } = req.params;
 
         if (!assignmentId) {
-            return res.status(400).json({ success: false, message: "Thiếu mã bài tập (assignmentId)." });
+            return res.status(400).json({ success: false, message: "Assignment ID is required." });
         }
 
         // ━━━ CACHE-ASIDE: stats + plagiarism top-10 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -128,12 +128,12 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
         });
 
         if (!result) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy bài tập." });
+            return res.status(404).json({ success: false, message: "Assignment not found." });
         }
 
         return res.json({ success: true, data: result });
     } catch (error) {
-        console.error("Lỗi getLecturerAnalytics:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy số liệu thống kê." });
+        console.error("Error getLecturerAnalytics:", error);
+        return res.status(500).json({ success: false, message: "Server error getting statistics." });
     }
 };

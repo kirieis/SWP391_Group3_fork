@@ -21,17 +21,17 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             if (process.env.NODE_ENV === "production") {
                 return res.status(403).json({
                     success: false,
-                    message: "Chế độ đăng nhập thử nghiệm bị vô hiệu hóa trên môi trường Production.",
+                    message: "Mock login is disabled in Production environment.",
                 });
             }
             email = mockEmail.trim().toLowerCase();
             fullName = email.split("@")[0].toUpperCase();
 
-        // =========================================================================
-        // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
-        //    Frontend nhận access_token → gọi Google UserInfo API lấy email
-        //    Backend nhận lại email đã xác thực để validate domain
-        // =========================================================================
+            // =========================================================================
+            // 2. GOOGLE ACCESS TOKEN FLOW (Frontend dùng @react-oauth/google)
+            //    Frontend nhận access_token → gọi Google UserInfo API lấy email
+            //    Backend nhận lại email đã xác thực để validate domain
+            // =========================================================================
         } else if (credential === "google_access_token" && access_token && mockEmail) {
             // Xác minh access_token với Google UserInfo API
             let verifiedEmail = "";
@@ -44,7 +44,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
                 if (!userInfoResponse.ok) {
                     return res.status(401).json({
                         success: false,
-                        message: "Google access_token không hợp lệ hoặc đã hết hạn.",
+                        message: "Google access_token is not valid or expired.",
                     });
                 }
                 const userInfo = (await userInfoResponse.json()) as { email?: string; name?: string };
@@ -53,7 +53,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             } catch {
                 return res.status(401).json({
                     success: false,
-                    message: "Không thể xác thực với Google. Vui lòng thử lại.",
+                    message: "Cannot verify with Google. Please try again.",
                 });
             }
 
@@ -61,7 +61,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             if (verifiedEmail !== mockEmail.trim().toLowerCase()) {
                 return res.status(403).json({
                     success: false,
-                    message: "Email không khớp với tài khoản Google đã chọn.",
+                    message: "Email do not match with Google account.",
                 });
             }
             email = verifiedEmail;
@@ -72,7 +72,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             // 3. XÁC THỰC GOOGLE ID TOKEN THẬT (dự phòng cho tương lai)
             // =====================================================================
             if (!credential || typeof credential !== "string") {
-                return res.status(400).json({ success: false, message: "Thiếu Google credential." });
+                return res.status(400).json({ success: false, message: "Missing Google credential." });
             }
 
             let payload;
@@ -83,11 +83,11 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
                 });
                 payload = ticket.getPayload();
             } catch (err) {
-                return res.status(401).json({ success: false, message: "Google token không hợp lệ." });
+                return res.status(401).json({ success: false, message: "Google token is not valid." });
             }
 
             if (!payload?.email || !payload.email_verified) {
-                return res.status(401).json({ success: false, message: "Email Google chưa được xác minh." });
+                return res.status(401).json({ success: false, message: "Google email is not verified." });
             }
 
             email = payload.email.trim().toLowerCase();
@@ -96,12 +96,12 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
 
 
         // 3. Kiểm tra domain hợp lệ (chấp nhận FPT domain và gmail.com)
-        if (!EMAIL_REGEX.test(email)) {
-            return res.status(403).json({
-                success: false,
-                message: "Vui lòng sử dụng tài khoản email FPT Education (@fpt.edu.vn, @fe.edu.vn) hoặc Gmail (@gmail.com) để đăng nhập.",
-            });
-        }
+        /* if (!EMAIL_REGEX.test(email)) {
+             return res.status(403).json({
+                 success: false,
+                 message: "Vui lòng sử dụng tài khoản email FPT Education (@fpt.edu.vn, @fe.edu.vn) hoặc Gmail (@gmail.com) để đăng nhập.",
+             });
+         }*/
 
         // 4. Phân loại Role mặc định theo domain hoặc vai trò yêu cầu
         const requestedRole = req.body.role;
@@ -109,8 +109,8 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             requestedRole === "LECTURER" || requestedRole === "STUDENT"
                 ? requestedRole
                 : email.endsWith("@fe.edu.vn")
-                ? "LECTURER"
-                : "STUDENT";
+                    ? "LECTURER"
+                    : "STUDENT";
         let code = email.split("@")[0].toUpperCase();
 
         // 5. Tìm hoặc tạo user trong DB (khớp tên quan hệ studentProfile/lecturerProfile/adminProfile)
@@ -158,7 +158,7 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
 
         return res.json({
             success: true,
-            message: "Đăng nhập thành công!",
+            message: "Login successful!",
             data: {
                 token,
                 user: {
@@ -173,15 +173,15 @@ export const loginWithGoogle = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        console.error("Lỗi đăng nhập:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ nội bộ khi đăng nhập." });
+        console.error("Error login: ", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
     }
 };
 
 export const getCurrentUser = async (req: Request, res: Response) => {
     try {
         if (!req.user) {
-            return res.status(401).json({ success: false, message: "Chưa xác thực." });
+            return res.status(401).json({ success: false, message: "Unauthorized." });
         }
 
         const user = await prisma.user.findUnique({
@@ -190,7 +190,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
         });
 
         if (!user) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy người dùng." });
+            return res.status(404).json({ success: false, message: "User not found." });
         }
 
         return res.json({
@@ -206,7 +206,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        console.error("Lỗi getCurrentUser:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ." });
+        console.error("Error getCurrentUser: ", error);
+        return res.status(500).json({ success: false, message: "Internal server error." });
     }
 };

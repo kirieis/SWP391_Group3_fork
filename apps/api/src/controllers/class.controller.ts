@@ -9,11 +9,11 @@ export const createClass = async (req: Request, res: Response) => {
         const lecturerId = req.user?.userId;
 
         if (!classCode) {
-            return res.status(400).json({ success: false, message: "Mã lớp (classCode) là bắt buộc." });
+            return res.status(400).json({ success: false, message: "Class code (classCode) is required." });
         }
 
         if (!lecturerId) {
-            return res.status(401).json({ success: false, message: "Chưa xác thực danh tính." });
+            return res.status(401).json({ success: false, message: "Unauthorized: User not identified." });
         }
 
         // Đảm bảo user có profile Lecturer
@@ -22,7 +22,7 @@ export const createClass = async (req: Request, res: Response) => {
         });
 
         if (!lecturer) {
-            return res.status(403).json({ success: false, message: "Tài khoản không phải là Giảng viên." });
+            return res.status(403).json({ success: false, message: "User account is not a lecturer." });
         }
 
         const newClass = await prisma.class.create({
@@ -34,12 +34,12 @@ export const createClass = async (req: Request, res: Response) => {
 
         return res.status(201).json({
             success: true,
-            message: "Tạo lớp học thành công!",
+            message: "Class created successfully!",
             data: newClass,
         });
     } catch (error: any) {
         console.error("Lỗi createClass:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi tạo lớp học." });
+        return res.status(500).json({ success: false, message: "Server error creating class." });
     }
 };
 
@@ -48,7 +48,7 @@ export const getMyClasses = async (req: Request, res: Response) => {
     try {
         const user = req.user;
         if (!user) {
-            return res.status(401).json({ success: false, message: "Chưa xác thực." });
+            return res.status(401).json({ success: false, message: "Unauthorized." });
         }
 
         if (user.role === "LECTURER") {
@@ -97,7 +97,7 @@ export const getMyClasses = async (req: Request, res: Response) => {
         return res.json({ success: true, data: allClasses });
     } catch (error) {
         console.error("Lỗi getMyClasses:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi lấy danh sách lớp." });
+        return res.status(500).json({ success: false, message: "Server error retrieving classes." });
     }
 };
 
@@ -108,7 +108,7 @@ export const importStudentsFromExcel = async (req: Request, res: Response) => {
         const file = req.file;
 
         if (!file) {
-            return res.status(400).json({ success: false, message: "Vui lòng đính kèm file Excel (.xlsx)." });
+            return res.status(400).json({ success: false, message: "Please attach an Excel file (.xlsx)." });
         }
 
         // Đọc file Excel từ bộ nhớ đệm (buffer)
@@ -118,7 +118,7 @@ export const importStudentsFromExcel = async (req: Request, res: Response) => {
         const rows: any[] = xlsx.utils.sheet_to_json(sheet);
 
         if (rows.length === 0) {
-            return res.status(400).json({ success: false, message: "File Excel rỗng, không có dữ liệu." });
+            return res.status(400).json({ success: false, message: "Excel file is empty, no data found." });
         }
 
         // Định dạng mong đợi: các cột email, studentCode (hoặc mssv), fullName
@@ -156,7 +156,7 @@ export const importStudentsFromExcel = async (req: Request, res: Response) => {
             if (!email || !studentCode) {
                 return res.status(400).json({
                     success: false,
-                    message: `Lỗi tại dòng ${index + 2}: Thiếu Email hoặc Mã số sinh viên. Toàn bộ thao tác đã bị hủy (Rollback).`,
+                    message: `Error at row ${index + 2}: Missing Email or Student Code. Entire operation cancelled (Rollback).`,
                 });
             }
 
@@ -188,6 +188,26 @@ export const importStudentsFromExcel = async (req: Request, res: Response) => {
                         },
                         include: { studentProfile: true },
                     });
+                } else {
+                    // Cập nhật họ tên và mã số sinh viên theo đúng thông tin từ file Excel
+                    await tx.user.update({
+                        where: { id: user.id },
+                        data: { fullName: item.fullName },
+                    });
+
+                    if (user.studentProfile) {
+                        await tx.student.update({
+                            where: { userId: user.id },
+                            data: { studentCode: item.studentCode },
+                        });
+                    } else {
+                        await tx.student.create({
+                            data: {
+                                userId: user.id,
+                                studentCode: item.studentCode,
+                            },
+                        });
+                    }
                 }
 
                 const studentId = user.id;
@@ -219,14 +239,14 @@ export const importStudentsFromExcel = async (req: Request, res: Response) => {
 
         return res.json({
             success: true,
-            message: `Import thành công! Đã ghi danh ${result.totalImported} sinh viên vào lớp.`,
+            message: `Import successful! Enrolled ${result.totalImported} students into class.`,
             data: result,
         });
     } catch (error: any) {
         console.error("Lỗi importStudentsFromExcel:", error);
         return res.status(500).json({
             success: false,
-            message: error.message || "Lỗi máy chủ khi import danh sách sinh viên.",
+            message: error.message || "Server error importing student list.",
         });
     }
 };
@@ -242,16 +262,16 @@ export const updateClass = async (req: Request, res: Response) => {
         // Tìm lớp và kiểm tra quyền sở hữu
         const existingClass = await prisma.class.findUnique({ where: { id: classId } });
         if (!existingClass) {
-            return res.status(404).json({ success: false, message: "Không tìm thấy lớp học." });
+            return res.status(404).json({ success: false, message: "Class not found." });
         }
 
         if (user.role === "LECTURER" && existingClass.lecturerId !== user.userId) {
-            return res.status(403).json({ success: false, message: "Bạn không có quyền sửa lớp của giảng viên khác." });
+            return res.status(403).json({ success: false, message: "You do not have permission to edit another lecturer's class." });
         }
 
         // Chỉ Admin mới được phép gán lớp sang giảng viên khác
         if (lecturerId && user.role !== "ADMIN") {
-            return res.status(403).json({ success: false, message: "Chỉ Admin mới có quyền thay đổi Giảng viên phụ trách lớp." });
+            return res.status(403).json({ success: false, message: "Only administrators can change the lecturer assigned to a class." });
         }
 
         const updated = await prisma.class.update({
@@ -262,10 +282,10 @@ export const updateClass = async (req: Request, res: Response) => {
             },
         });
 
-        return res.json({ success: true, message: "Cập nhật lớp thành công!", data: updated });
+        return res.json({ success: true, message: "Class updated successfully!", data: updated });
     } catch (error) {
         console.error("Lỗi updateClass:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi cập nhật lớp." });
+        return res.status(500).json({ success: false, message: "Server error updating class." });
     }
 };
 
@@ -276,13 +296,13 @@ export const deleteClass = async (req: Request, res: Response) => {
         const user = req.user!;
 
         if (user.role !== "ADMIN") {
-            return res.status(403).json({ success: false, message: "Chỉ Admin mới có quyền xóa lớp học." });
+            return res.status(403).json({ success: false, message: "Only administrators can delete classes." });
         }
 
         await prisma.class.delete({ where: { id: classId } });
-        return res.json({ success: true, message: "Đã xóa lớp học thành công!" });
+        return res.json({ success: true, message: "Class deleted successfully!" });
     } catch (error) {
         console.error("Lỗi deleteClass:", error);
-        return res.status(500).json({ success: false, message: "Lỗi máy chủ khi xóa lớp." });
+        return res.status(500).json({ success: false, message: "Server error deleting class." });
     }
 };

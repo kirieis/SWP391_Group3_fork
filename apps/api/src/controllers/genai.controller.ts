@@ -113,8 +113,8 @@ export const reviewSubmission = async (req: Request, res: Response) => {
     typeof body.compileOutput === "string"
       ? body.compileOutput
       : typeof body.stderr === "string"
-      ? body.stderr
-      : "";
+        ? body.stderr
+        : "";
 
   if (typeof submissionId !== "string" || !submissionId || typeof language !== "string" || !language) {
     return res.status(400).json({
@@ -127,7 +127,7 @@ export const reviewSubmission = async (req: Request, res: Response) => {
     // 1. Lỗi biên dịch (NFR-17). Giữ bất biến contract:
     //    AI giải thích được → DONE + cleanCodeScore = 0; AI lỗi → PENDING + cleanCodeScore = null.
     if (body.isCompilationError === true) {
-      const COMPILE_FEEDBACK = "Bài nộp không thể biên dịch thành công.";
+      const COMPILE_FEEDBACK = "Your submission cannot be compiled.";
       const result = await gateway.chat(buildErrorExplanationPrompt(compileOutput, code, language));
 
       if (result.status !== "COMPLETED" || !result.data) {
@@ -164,7 +164,7 @@ export const reviewSubmission = async (req: Request, res: Response) => {
       return res.status(200).json({
         reviewStatus: "DONE",
         cleanCodeScore: cached.score,
-        feedback: cached.feedback + "\n\n(Kết quả lấy từ cache)",
+        feedback: cached.feedback + "\n\n(Results from cache)",
       } as ReviewResponse);
     }
 
@@ -177,11 +177,11 @@ export const reviewSubmission = async (req: Request, res: Response) => {
       const { score, feedback } = parseCleanCodeReview(result.data.content);
       const note =
         code.length > MAX_CODE_CHARS
-          ? `\n\n(Lưu ý: mã nguồn dài hơn ${MAX_CODE_CHARS} ký tự nên chỉ phần đầu được đánh giá.)`
+          ? `\n\n(Note: code longer than ${MAX_CODE_CHARS} characters so only the first part is evaluated.)`
           : "";
       const finalFeedback = feedback + note;
       // Lưu cache nền (fail-safe)
-      setCachedReview(code, language, { score, feedback: finalFeedback }).catch(() => {});
+      setCachedReview(code, language, { score, feedback: finalFeedback }).catch(() => { });
 
       return res.status(200).json({
         reviewStatus: "DONE",
@@ -213,19 +213,19 @@ export const generateAssignment = async (req: Request, res: Response) => {
   if (typeof topic !== "string" || !topic.trim() || topic.length > MAX_TOPIC_LENGTH) {
     return res.status(400).json({
       success: false,
-      message: `Chủ đề (topic) là bắt buộc và tối đa ${MAX_TOPIC_LENGTH} ký tự.`,
+      message: `Topic is required and at most ${MAX_TOPIC_LENGTH} characters.`,
     });
   }
   if (!ALLOWED_LANGUAGES.includes(language)) {
     return res.status(400).json({
       success: false,
-      message: "Ngôn ngữ phải là Java, Python hoặc C#.",
+      message: "Language must be Java, Python or C#.",
     });
   }
   if (!ALLOWED_DIFFICULTY.includes(difficulty)) {
     return res.status(400).json({
       success: false,
-      message: "Độ khó phải là easy, medium hoặc hard.",
+      message: "Difficulty must be easy, medium or hard.",
     });
   }
 
@@ -243,19 +243,19 @@ export const generateAssignment = async (req: Request, res: Response) => {
       } catch {
         return res.status(502).json({
           success: false,
-          message: "AI trả về định dạng không hợp lệ. Vui lòng thử lại.",
+          message: "AI returned an invalid format. Please try again.",
         });
       }
     }
     return res.status(503).json({
       success: false,
-      message: "Không thể sinh đề bài lúc này do dịch vụ AI quá tải. Vui lòng thử lại sau.",
+      message: "Unable to generate assignment at this time due to AI service overload. Please try again later.",
     });
   } catch (error) {
     console.error("[genai] generateAssignment failed", error);
     return res.status(500).json({
       success: false,
-      message: "Lỗi máy chủ khi sinh đề bài.",
+      message: "Internal server error while generating assignment.",
     });
   }
 };

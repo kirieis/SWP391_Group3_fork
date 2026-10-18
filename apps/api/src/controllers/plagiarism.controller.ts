@@ -24,7 +24,7 @@ function extractSourceCode(fileUrl: string, language: string): string {
     );
 
     if (!fs.existsSync(zipPath)) {
-        throw new Error("Không tìm thấy file ZIP của bài nộp.");
+        throw new Error("File ZIP of submission not found.");
     }
 
     const zip = new AdmZip(zipPath);
@@ -56,7 +56,7 @@ function extractSourceCode(fileUrl: string, language: string): string {
 
     if (sourceEntries.length === 0) {
         throw new Error(
-            `Không tìm thấy file mã nguồn ${extensions.join(", ")} trong ZIP.`,
+            `No source code files ${extensions.join(", ")} found in ZIP.`,
         );
     }
 
@@ -71,7 +71,7 @@ function extractSourceCode(fileUrl: string, language: string): string {
 
         if (totalBytes > MAX_SOURCE_BYTES) {
             throw new Error(
-                "Tổng mã nguồn vượt quá giới hạn đọc 1 MB.",
+                "Total source code exceeds 1 MB limit.",
             );
         }
 
@@ -94,7 +94,7 @@ export const getPlagiarismMatch = async (
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: "Vui lòng đăng nhập.",
+                message: "Please login.",
             });
         }
 
@@ -151,7 +151,7 @@ export const getPlagiarismMatch = async (
         if (!match) {
             return res.status(404).json({
                 success: false,
-                message: "Không tìm thấy cặp bài đối chiếu.",
+                message: "No matching plagiarism found.",
             });
         }
 
@@ -162,7 +162,7 @@ export const getPlagiarismMatch = async (
         if (sub1.assignmentId !== sub2.assignmentId) {
             return res.status(409).json({
                 success: false,
-                message: "Hai bài nộp không thuộc cùng một bài tập.",
+                message: "Two submissions do not belong to the same assignment.",
             });
         }
 
@@ -172,7 +172,7 @@ export const getPlagiarismMatch = async (
         if (user.role !== "ADMIN" && lecturerId !== user.userId) {
             return res.status(403).json({
                 success: false,
-                message: "Bạn không có quyền xem cặp bài đối chiếu này.",
+                message: "You do not have permission to view this matching plagiarism.",
             });
         }
 
@@ -181,7 +181,7 @@ export const getPlagiarismMatch = async (
         if (language !== sub2.assignment.language) {
             return res.status(409).json({
                 success: false,
-                message: "Ngôn ngữ của hai bài nộp không khớp.",
+                message: "The language of the two submissions does not match.",
             });
         }
 
@@ -196,7 +196,7 @@ export const getPlagiarismMatch = async (
                 success: false,
                 message: error instanceof Error
                     ? error.message
-                    : "Không thể đọc mã nguồn bài nộp.",
+                    : "Cannot read source code of submission.",
             });
         }
 
@@ -223,11 +223,11 @@ export const getPlagiarismMatch = async (
             },
         });
     } catch (error) {
-        console.error("Lỗi getPlagiarismMatch:", error);
+        console.error("Error getPlagiarismMatch:", error);
 
         return res.status(500).json({
             success: false,
-            message: "Lỗi máy chủ khi lấy dữ liệu đối chiếu.",
+            message: "Internal server error while getting matching plagiarism.",
         });
     }
 };
