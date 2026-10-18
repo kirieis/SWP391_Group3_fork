@@ -13,6 +13,7 @@ interface TestCaseResult {
     actualOutput: string;
     expectedOutput: string;
     durationMs: number;
+    error?: string;
 }
 
 export class GradingService {
@@ -178,32 +179,37 @@ export class GradingService {
             let totalWeight = 0;
             let passedWeight = 0;
             let passedCount = 0;
+            const testResults: Array<TestCaseResult & { testCaseId?: string; error?: string }> = [];
 
-            if (testCases.length === 0) {
-                // Không có testcase -> mặc định đạt điểm tối đa
-                totalWeight = 10;
-                passedWeight = 10;
-                passedCount = 1;
-            } else {
-                for (const tc of testCases) {
-                    const weight = tc.scoreWeight || 1;
-                    totalWeight += weight;
+            // Never award points when an assignment has no configured test cases.
+            // A source archive compiling successfully is not equivalent to passing tests.
+            for (const tc of testCases) {
+                const weight = Math.max(0, Number(tc.scoreWeight) || 1);
+                totalWeight += weight;
 
-                    const tcResult = await this.executeTestCase(
-                        tempDir,
-                        mainClassName || "Main",
-                        tc.inputData || "",
-                        tc.expectedOutput || ""
-                    );
+                const tcResult = await this.executeTestCase(
+                    tempDir,
+                    mainClassName || "Main",
+                    tc.inputData || "",
+                    tc.expectedOutput || ""
+                );
 
-                    if (tcResult.passed) {
-                        passedCount++;
-                        passedWeight += weight;
-                    }
+                testResults.push({
+                    testCaseId: tc.id,
+                    passed: tcResult.passed,
+                    actualOutput: tcResult.actualOutput,
+                    expectedOutput: tcResult.expectedOutput,
+                    durationMs: tcResult.durationMs,
+                    ...(!tcResult.passed && tcResult.error ? { error: tcResult.error } : {}),
+                });
+
+                if (tcResult.passed) {
+                    passedCount++;
+                    passedWeight += weight;
                 }
             }
 
-            // Tính điểm theo thang 100 (tương thích toàn bộ UI và Lecturer dashboard)
+            // Score is based only on configured test cases; zero test cases means zero, not 10/10.
             const calculatedScore = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100 * 10) / 10 : 0;
             console.log(`[GradingService] Kết quả test cases: ${passedCount}/${testCases.length} đạt. Điểm: ${calculatedScore}/100`);
 
@@ -242,6 +248,7 @@ export class GradingService {
                     status: finalStatus,
                     totalScore: calculatedScore,
                     aiFeedback: aiFeedbackText,
+                    testResults: JSON.stringify(testResults),
                 },
             });
 
@@ -342,14 +349,16 @@ export class GradingService {
                 const actual = stdout.trim();
                 const expected = expectedOutput.trim();
 
-                // So sánh mềm: hoặc bằng chính xác, hoặc stdout chứa expected output
-                const passed = !killed && (actual === expected || actual.includes(expected));
+                // Compare normalized output exactly. Using includes() incorrectly passes
+                // every output when expectedOutput is an empty string.
+                const passed = !killed && child.exitCode === 0 && actual === expected;
 
                 resolve({
                     passed,
                     actualOutput: actual,
                     expectedOutput: expected,
                     durationMs,
+                    ...(!passed ? { error: killed ? "Execution timed out after 5 seconds." : (stderr.trim() || `Process exited with code ${child.exitCode ?? "unknown"}.`) } : {}),
                 });
             });
 
@@ -360,6 +369,7 @@ export class GradingService {
                     actualOutput: stdout,
                     expectedOutput: expectedOutput.trim(),
                     durationMs: Date.now() - startTime,
+                    error: "Failed to start the Java process.",
                 });
             });
         });

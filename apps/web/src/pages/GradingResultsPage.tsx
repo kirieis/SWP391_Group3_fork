@@ -429,7 +429,7 @@ export default function GradingResultsPage() {
                           <div className="p-3 bg-white font-mono text-[11px] space-y-2 text-slate-600 border-t border-slate-200 break-words">
                             <p><span className="text-slate-400">Input:</span> {tc.inputData || '(None)'}</p>
                             <p><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(None)'}</p>
-                            {result && <p><span className="text-slate-400">Actual:</span> {result.actualOutput || '(Empty output)'}</p>}
+                            {result && <p><span className="text-slate-400">Actual output:</span> {result.actualOutput !== undefined && result.actualOutput !== '' ? result.actualOutput : '(Empty output)'}</p>}
                             {result?.error && <p className="text-rose-700"><span className="text-rose-500">Error:</span> {result.error}</p>}
                             {result?.durationMs !== undefined && <p><span className="text-slate-400">Duration:</span> {result.durationMs} ms</p>}
                           </div>

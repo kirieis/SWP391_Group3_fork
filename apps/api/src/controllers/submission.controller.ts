@@ -182,8 +182,19 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
             }));
 
         const isStudent = requestingUser?.role === "STUDENT";
+        let parsedTestResults: unknown[] = [];
+        if (submission.testResults) {
+            try {
+                const decoded = JSON.parse(submission.testResults);
+                parsedTestResults = Array.isArray(decoded) ? decoded : [];
+            } catch {
+                parsedTestResults = [];
+            }
+        }
+
         const responseData = {
             ...submission,
+            testResults: parsedTestResults,
             plagiarismMatches1: isStudent
                 ? sanitizePlagiarismForStudent(submission.plagiarismMatches1)
                 : submission.plagiarismMatches1,
