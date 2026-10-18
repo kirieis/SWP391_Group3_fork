@@ -12,7 +12,7 @@ const configSchema = z.object({
   INTERNAL_TOKEN: z.string().min(8, 'INTERNAL_TOKEN must be at least 8 characters long'),
 
   // Reporter / Callback
-  CORE_API_URL: z.string().url().default('http://localhost:5000'),
+  CORE_API_URL: z.string().url().default('http://localhost:3000'),
   CORE_API_KEY: z.string().default('aita_internal_secret_key_2026'),
 
   // Concurrency & Queuing
