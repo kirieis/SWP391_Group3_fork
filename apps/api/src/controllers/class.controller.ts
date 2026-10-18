@@ -306,3 +306,35 @@ export const deleteClass = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: "Server error deleting class." });
     }
 };
+
+// Remove one or more students from a lecturer-managed class without deleting their accounts.
+export const removeClassStudents = async (req: Request, res: Response) => {
+    try {
+        const { classId } = req.params;
+        const user = req.user;
+        const { studentIds, all } = req.body as { studentIds?: string[]; all?: boolean };
+        if (!user) return res.status(401).json({ success: false, message: "Unauthorized." });
+
+        const classRecord = await prisma.class.findUnique({ where: { id: classId }, select: { id: true, lecturerId: true } });
+        if (!classRecord) return res.status(404).json({ success: false, message: "Class not found." });
+        if (user.role === "LECTURER" && classRecord.lecturerId !== user.userId) {
+            return res.status(403).json({ success: false, message: "You do not have permission to manage students in this class." });
+        }
+        if (user.role !== "LECTURER" && user.role !== "ADMIN") {
+            return res.status(403).json({ success: false, message: "Only lecturers and administrators can remove students." });
+        }
+
+        let ids = Array.isArray(studentIds) ? [...new Set(studentIds.filter((id) => typeof id === "string" && id.trim()))] : [];
+        if (all === true) {
+            const enrollments = await prisma.classStudent.findMany({ where: { classId, status: "ACTIVE" }, select: { studentId: true } });
+            ids = enrollments.map((entry) => entry.studentId);
+        }
+        if (!ids.length) return res.status(400).json({ success: false, message: "Select at least one student to remove." });
+
+        const result = await prisma.classStudent.deleteMany({ where: { classId, studentId: { in: ids }, status: "ACTIVE" } });
+        return res.json({ success: true, message: `Successfully removed ${result.count} student(s) from the class.`, data: { removedCount: result.count } });
+    } catch (error) {
+        console.error("Error removing class students:", error);
+        return res.status(500).json({ success: false, message: "Unable to remove students from the class." });
+    }
+};

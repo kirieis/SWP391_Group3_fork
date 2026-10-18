@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { createClass, getMyClasses, importStudentsFromExcel, updateClass, deleteClass } from "../controllers/class.controller.js";
+import { createClass, getMyClasses, importStudentsFromExcel, updateClass, deleteClass, removeClassStudents } from "../controllers/class.controller.js";
 import { authenticateJWT, authorizeRole } from "../middlewares/auth.middleware.js";
 
 
@@ -15,6 +15,9 @@ router.post("/", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), createClas
 
 // Import sinh viên vào lớp bằng file Excel (chỉ LECTURER hoặc ADMIN)
 router.post("/:classId/import-students", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), upload.single("file") as any, importStudentsFromExcel);
+
+// Remove enrolled students from a class (Lecturer/Admin)
+router.delete("/:classId/students", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), removeClassStudents);
 
 // Sửa lớp (Lecturer/Admin)
 router.put("/:classId", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), updateClass);

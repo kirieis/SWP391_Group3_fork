@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments } from "../controllers/assignment.controller.js";
+import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments, deleteAssignment } from "../controllers/assignment.controller.js";
 import { authenticateJWT, authorizeRole, requireInternalApiKey } from "../middlewares/auth.middleware.js";
 
 const router = Router();
@@ -12,6 +12,9 @@ router.get("/internal/:assignmentId", requireInternalApiKey, getAssignmentForSan
 
 // Xem chi tiết đề bài (Ai đã đăng nhập đều xem được)
 router.get("/:assignmentId", authenticateJWT, getAssignmentDetail);
+
+// Delete an assignment (only its owning lecturer or an administrator)
+router.delete("/:assignmentId", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), deleteAssignment);
 
 // Tạo đề bài mới kèm Test Cases (chỉ LECTURER hoặc ADMIN)
 router.post("/", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), createAssignment);

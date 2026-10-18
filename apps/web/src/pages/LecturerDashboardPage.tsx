@@ -32,6 +32,7 @@ interface ClassItem {
   _count?: { students?: number };
   students?: Array<{
     student?: {
+      userId?: string;
       studentCode?: string;
       user?: { fullName?: string; email?: string };
     };
@@ -107,6 +108,15 @@ export default function LecturerDashboardPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [expandedStudentList, setExpandedStudentList] = useState<boolean>(false);
+  const [studentSearch, setStudentSearch] = useState<string>('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [studentDeleteLoading, setStudentDeleteLoading] = useState<boolean>(false);
+  const [studentDeleteMessage, setStudentDeleteMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showAssignmentManager, setShowAssignmentManager] = useState<boolean>(false);
+  const [assignmentManagerFilter, setAssignmentManagerFilter] = useState<string>('');
+  const [selectedDeleteAssignmentIds, setSelectedDeleteAssignmentIds] = useState<string[]>([]);
+  const [assignmentDeleteLoading, setAssignmentDeleteLoading] = useState<boolean>(false);
+  const [assignmentDeleteMessage, setAssignmentDeleteMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Trạng thái Assignment
   const [assignmentsLoading, setAssignmentsLoading] = useState<boolean>(false);
@@ -342,6 +352,61 @@ export default function LecturerDashboardPage() {
     }
   };
 
+  const handleRemoveSelectedStudents = async (removeAll = false) => {
+    if (!selectedClassId) return;
+    const visibleStudents = classes.find((item) => item.id === selectedClassId)?.students ?? [];
+    const ids = removeAll ? [] : selectedStudentIds;
+    if (!removeAll && ids.length === 0) {
+      setStudentDeleteMessage({ type: 'error', text: 'Select at least one student to remove.' });
+      return;
+    }
+    const prompt = removeAll
+      ? `Remove all ${visibleStudents.length} students from this class? Their accounts will not be deleted.`
+      : `Remove ${ids.length} selected student(s) from this class? Their accounts will not be deleted.`;
+    if (!window.confirm(prompt)) return;
+    setStudentDeleteLoading(true);
+    setStudentDeleteMessage(null);
+    const res = await apiRequest<{ removedCount: number }>(`/classes/${selectedClassId}/students`, {
+      method: 'DELETE', body: JSON.stringify(removeAll ? { all: true } : { studentIds: ids }),
+    });
+    setStudentDeleteLoading(false);
+    if (res.success) {
+      setSelectedStudentIds([]);
+      setStudentSearch('');
+      setStudentDeleteMessage({ type: 'success', text: res.message || 'Students removed successfully.' });
+      await loadClasses();
+    } else {
+      setStudentDeleteMessage({ type: 'error', text: res.message || 'Unable to remove students.' });
+    }
+  };
+
+  const openAssignmentManager = async () => {
+    setShowAssignmentManager(true);
+    setAssignmentDeleteMessage(null);
+    setSelectedDeleteAssignmentIds([]);
+    await loadExistingAssignments();
+  };
+
+  const handleDeleteSelectedAssignments = async () => {
+    if (!selectedDeleteAssignmentIds.length) {
+      setAssignmentDeleteMessage({ type: 'error', text: 'Select at least one assignment to delete.' });
+      return;
+    }
+    if (!window.confirm(`Permanently delete ${selectedDeleteAssignmentIds.length} selected assignment(s)? Related submissions and test cases may also be deleted.`)) return;
+    setAssignmentDeleteLoading(true);
+    setAssignmentDeleteMessage(null);
+    const results = await Promise.all(selectedDeleteAssignmentIds.map((id) => apiRequest(`/assignments/${id}`, { method: 'DELETE' })));
+    const succeeded = results.filter((result) => result.success).length;
+    setAssignmentDeleteLoading(false);
+    setSelectedDeleteAssignmentIds([]);
+    setAssignmentDeleteMessage({
+      type: succeeded > 0 ? 'success' : 'error',
+      text: succeeded === results.length ? `Successfully deleted ${succeeded} assignment(s).` : `Deleted ${succeeded} of ${results.length} assignment(s). ${results.length - succeeded} could not be deleted.`,
+    });
+    await loadExistingAssignments();
+    if (selectedClassId) await loadAssignmentsForClass(selectedClassId);
+  };
+
   const handleSelectAssignment = (assignmentId: string) => {
     setSelectedAssignmentId(assignmentId);
     setAnalytics(null);
@@ -351,6 +416,9 @@ export default function LecturerDashboardPage() {
 
   const handleSelectClass = (classId: string) => {
     setExpandedStudentList(false);
+    setSelectedStudentIds([]);
+    setStudentSearch('');
+    setStudentDeleteMessage(null);
     setSelectedClassId(classId);
     // Xóa ngay dữ liệu assignments và số liệu thống kê của lớp cũ để tránh lưu vết sai lệch
     setAssignments([]);
@@ -562,6 +630,7 @@ export default function LecturerDashboardPage() {
                 setShowCreateModal(true);
               } },
               { id: 'IMPORT_STUDENTS', label: 'Import students (Excel)', icon: Upload, action: () => setShowImportModal(true) },
+              { id: 'MANAGE_ASSIGNMENTS', label: 'Manage assignments', icon: Trash2, action: openAssignmentManager },
               { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
               {
                 id: 'APPEALS',
@@ -735,29 +804,27 @@ export default function LecturerDashboardPage() {
                     </div>
                     <ChevronRight size={18} className={`transition-transform ${expandedStudentList ? 'rotate-90' : ''}`} />
                   </button>
-                  <div className="px-4 pb-4">
-                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) > 0 && (
-                      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                        <span>Student Code</span>
-                        <span>Full Name</span>
-                      </div>
-                    )}
-                    {(classes.find((item) => item.id === selectedClassId)?.students ?? [])
-                      .slice(0, expandedStudentList ? undefined : 20)
-                      .map((enrollment, index) => (
-                        <div key={`${enrollment.student?.studentCode ?? 'student'}-${index}`} className="flex items-center justify-between gap-3 border-t border-slate-100 py-2.5 text-xs">
-                          <span className="font-mono font-medium text-slate-700">{enrollment.student?.studentCode || 'ID unavailable'}</span>
-                          <span className="font-semibold text-slate-900">{enrollment.student?.user?.fullName || 'Name unavailable'}</span>
-                        </div>
-                      ))}
-                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) === 0 && (
-                      <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">No students enrolled in this class yet.</p>
-                    )}
-                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) > 20 && (
-                      <button type="button" onClick={() => setExpandedStudentList((expanded) => !expanded)} className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800">
-                        {expandedStudentList ? 'Show fewer students' : 'Show all students'}
-                      </button>
-                    )}
+                  <div className="px-4 pb-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Search by full name or student code..." aria-label="Search students by full name or student code" className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-indigo-400" />
+                      <button type="button" onClick={() => setSelectedStudentIds((current) => Array.from(new Set([...current, ...(classes.find((item) => item.id === selectedClassId)?.students ?? []).map((e) => e.student?.userId).filter((id): id is string => Boolean(id))])))} className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold hover:bg-slate-50">Select all</button>
+                      <button type="button" disabled={studentDeleteLoading || (classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) === 0} onClick={() => handleRemoveSelectedStudents(true)} className="px-3 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-50">Remove all</button>
+                      <button type="button" disabled={studentDeleteLoading || selectedStudentIds.length === 0} onClick={() => handleRemoveSelectedStudents(false)} className="px-3 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-50">{studentDeleteLoading ? 'Removing...' : `Remove selected (${selectedStudentIds.length})`}</button>
+                    </div>
+                    {studentDeleteMessage && <p role="status" className={`text-xs ${studentDeleteMessage.type === 'success' ? 'text-emerald-700' : 'text-rose-700'}`}>{studentDeleteMessage.text}</p>}
+                    <div className="grid grid-cols-[auto_1fr_1fr] gap-3 border-b border-slate-200 pb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider"><span>Select</span><span>Student Code</span><span>Full Name</span></div>
+                    {(classes.find((item) => item.id === selectedClassId)?.students ?? []).filter((enrollment) => {
+                      const query = studentSearch.trim().toLowerCase();
+                      return !query || `${enrollment.student?.studentCode ?? ''} ${enrollment.student?.user?.fullName ?? ''}`.toLowerCase().includes(query);
+                    }).slice(0, expandedStudentList ? undefined : 20).map((enrollment, index) => {
+                      const studentId = enrollment.student?.userId;
+                      return <div key={`${studentId ?? enrollment.student?.studentCode ?? 'student'}-${index}`} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3 border-t border-slate-100 py-2.5 text-xs">
+                        <input type="checkbox" aria-label={`Select ${enrollment.student?.user?.fullName || enrollment.student?.studentCode || 'student'}`} disabled={!studentId} checked={Boolean(studentId && selectedStudentIds.includes(studentId))} onChange={(event) => setSelectedStudentIds((current) => event.target.checked ? [...current, studentId!] : current.filter((id) => id !== studentId))} />
+                        <span className="font-mono font-medium text-slate-700">{enrollment.student?.studentCode || 'ID unavailable'}</span><span className="font-semibold text-slate-900">{enrollment.student?.user?.fullName || 'Name unavailable'}</span>
+                      </div>;
+                    })}
+                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) === 0 && <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">No students enrolled in this class yet.</p>}
+                    {(classes.find((item) => item.id === selectedClassId)?.students?.length ?? 0) > 20 && <button type="button" onClick={() => setExpandedStudentList((expanded) => !expanded)} className="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800">{expandedStudentList ? 'Show fewer students' : 'Show all students'}</button>}
                   </div>
                 </section>
               )}
@@ -1594,6 +1661,18 @@ export default function LecturerDashboardPage() {
       )}
 
       {/* Modal Duyệt & Xử lý Khiếu nại (Appeal Resolution Modal) */}
+      {showAssignmentManager && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3"><div><h3 className="text-base font-bold text-slate-900">Manage existing assignments</h3><p className="mt-1 text-xs text-slate-500">Assignments from all classes you manage are listed below.</p></div><button type="button" onClick={() => setShowAssignmentManager(false)} className="text-slate-400 hover:text-slate-700" aria-label="Close assignment manager"><X size={18} /></button></div>
+            <div className="flex flex-col gap-2 sm:flex-row"><select value={assignmentManagerFilter} onChange={(event) => setAssignmentManagerFilter(event.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs"><option value="">All classes</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.classCode}</option>)}</select><button type="button" onClick={() => setSelectedDeleteAssignmentIds((current) => Array.from(new Set([...current, ...existingAssignments.filter((a) => !assignmentManagerFilter || a.classId === assignmentManagerFilter).map((a) => a.id)])))} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold">Select all shown</button><button type="button" disabled={assignmentDeleteLoading || !selectedDeleteAssignmentIds.length} onClick={handleDeleteSelectedAssignments} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50">{assignmentDeleteLoading ? 'Deleting...' : `Delete selected (${selectedDeleteAssignmentIds.length})`}</button></div>
+            {assignmentDeleteMessage && <p role="status" className={`text-xs ${assignmentDeleteMessage.type === 'success' ? 'text-emerald-700' : 'text-rose-700'}`}>{assignmentDeleteMessage.text}</p>}
+            {existingAssignmentsLoading ? <p className="py-8 text-center text-xs text-slate-500">Loading assignments...</p> : existingAssignmentsError ? <p className="text-xs text-rose-700">{existingAssignmentsError}</p> : <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">{existingAssignments.filter((a) => !assignmentManagerFilter || a.classId === assignmentManagerFilter).map((assignment) => <label key={assignment.id} className="flex cursor-pointer items-start gap-3 p-3 hover:bg-slate-50"><input type="checkbox" className="mt-1" checked={selectedDeleteAssignmentIds.includes(assignment.id)} onChange={(event) => setSelectedDeleteAssignmentIds((current) => event.target.checked ? [...current, assignment.id] : current.filter((id) => id !== assignment.id))} /><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-slate-900">{assignment.title}</span><span className="mt-1 block text-[11px] text-slate-500">{assignment.class?.classCode || 'Class unavailable'} · {assignment.language || 'Language unavailable'} · Deadline: {assignment.deadline ? new Date(assignment.deadline).toLocaleString('en-US') : 'Not set'}</span></span></label>)}{existingAssignments.filter((a) => !assignmentManagerFilter || a.classId === assignmentManagerFilter).length === 0 && <p className="p-5 text-center text-xs text-slate-500">No assignments found for this filter.</p>}</div>}
+            <div className="flex justify-end"><button type="button" onClick={() => setShowAssignmentManager(false)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600">Close</button></div>
+          </div>
+        </div>
+      )}
+
       {resolveModalAppeal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">

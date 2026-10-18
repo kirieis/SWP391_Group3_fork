@@ -241,3 +241,41 @@ export const getAssignments = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: "Internal server error while getting assignments." });
     }
 };
+
+
+// Delete an assignment owned by the current lecturer (or any assignment for an admin).
+export const deleteAssignment = async (req: Request, res: Response) => {
+    try {
+        const { assignmentId } = req.params;
+        const user = req.user;
+        if (!user) return res.status(401).json({ success: false, message: "Unauthorized." });
+        const assignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            include: { class: { select: { lecturerId: true } } },
+        });
+        if (!assignment) return res.status(404).json({ success: false, message: "Assignment not found." });
+        if (user.role === "LECTURER" && assignment.class.lecturerId !== user.userId) {
+            return res.status(403).json({ success: false, message: "You can only delete assignments from classes you manage." });
+        }
+        if (user.role !== "LECTURER" && user.role !== "ADMIN") {
+            return res.status(403).json({ success: false, message: "Only lecturers and administrators can delete assignments." });
+        }
+        await prisma.$transaction(async (tx) => {
+            const submissions = await tx.submission.findMany({ where: { assignmentId }, select: { id: true } });
+            const submissionIds = submissions.map((submission) => submission.id);
+            if (submissionIds.length) {
+                // Remove dependent records in FK-safe order before deleting the assignment.
+                await tx.plagiarismMatch.deleteMany({ where: { OR: [
+                    { submission1Id: { in: submissionIds } },
+                    { submission2Id: { in: submissionIds } },
+                ] } });
+                await tx.submission.deleteMany({ where: { assignmentId } });
+            }
+            await tx.assignment.delete({ where: { id: assignmentId } });
+        });
+        return res.json({ success: true, message: "Assignment and its related submissions deleted successfully." });
+    } catch (error) {
+        console.error("Error deleting assignment:", error);
+        return res.status(500).json({ success: false, message: "Unable to delete the assignment. It may have related records that prevent deletion." });
+    }
+};
