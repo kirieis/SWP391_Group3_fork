@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { logger } from "../../logger.js";
 import type {
   Module1CallbackBody,
@@ -233,6 +235,38 @@ export class MockSandboxClient implements ISandboxClient {
       executionTimeMs = 80;
       errorMessage =
         "error: incompatible types: String cannot be converted to int";
+    } else if (
+      filePath.includes("random") ||
+      filePath.includes("fail") ||
+      filePath.includes("wrong")
+    ) {
+      outcome = "FAILED";
+      passedTests = 0;
+      executionTimeMs = 450;
+      errorMessage = "Wrong Answer: 0/10 test cases passed.";
+    } else {
+      // Check file on disk if exists to detect random/fail content
+      try {
+        const candidatePaths = [
+          path.resolve(process.cwd(), request.fileRelativePath),
+          path.resolve(process.cwd(), "../api", request.fileRelativePath),
+          path.resolve(process.cwd(), "../../apps/api", request.fileRelativePath),
+          path.resolve(process.cwd(), "uploads/submissions", path.basename(request.fileRelativePath)),
+        ];
+        for (const p of candidatePaths) {
+          if (fs.existsSync(p)) {
+            const raw = fs.readFileSync(p).toString("latin1").toLowerCase();
+            if (raw.includes("random") || raw.includes("fail") || raw.includes("wrong")) {
+              outcome = "FAILED";
+              passedTests = 0;
+              errorMessage = "Wrong Answer: Code ngẫu nhiên không khớp với test cases.";
+            }
+            break;
+          }
+        }
+      } catch {
+        // Ignore inspection error
+      }
     }
 
     logger.info(

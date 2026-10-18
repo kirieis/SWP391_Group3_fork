@@ -219,8 +219,8 @@ export class ExecutionService {
         testCases = await this.fetchTestCasesFromGateway(req.assignmentId);
       }
       if (testCases.length === 0) {
-        // Fallback default sanity test case
-        testCases = [{ id: 'tc-default', inputData: '', expectedOutput: '', scoreWeight: 10 }];
+        // Default benchmark test case — requires actual matching output, preventing random code from auto-passing
+        testCases = [{ id: 'tc-default', inputData: 'Hello\n', expectedOutput: 'Echo: Hello', scoreWeight: 10 }];
       }
       totalTests = testCases.length;
 
