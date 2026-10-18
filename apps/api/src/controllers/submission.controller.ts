@@ -194,9 +194,10 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
 
         const isStudent = requestingUser?.role === "STUDENT";
         let parsedTestResults: unknown[] = [];
-        if (submission.testResults) {
+        const rawTestResults = (submission as any).testResults;
+        if (rawTestResults) {
             try {
-                const decoded = JSON.parse(submission.testResults);
+                const decoded = JSON.parse(rawTestResults);
                 parsedTestResults = Array.isArray(decoded) ? decoded : [];
             } catch {
                 parsedTestResults = [];

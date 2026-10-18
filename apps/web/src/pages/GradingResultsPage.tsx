@@ -149,9 +149,18 @@ export default function GradingResultsPage() {
   const isPending = !submission || (!TERMINAL_STATUSES.includes(submission.status || '') && submission.astCheckStatus === 'PENDING') || submission.status === 'PENDING' || submission.status === 'RUNNING' || submission.status === 'RUNNING_TESTS';
   const isScoreWithheld = submission?.status === 'SCORE_WITHHELD';
 
-  // Lấy test cases thật từ assignment trong kết quả backend (KHÔNG DÙNG FAKE FALLBACK)
-  const testCases: TestCaseItem[] = submission?.assignment?.testCases || [];
+  // Lấy test cases thật từ assignment trong kết quả backend (hoặc từ testResults đã chấm)
+  const rawTestCases: TestCaseItem[] = submission?.assignment?.testCases || [];
   const testResults: TestCaseResult[] = Array.isArray(submission?.testResults) ? submission.testResults : [];
+  const testCases: TestCaseItem[] =
+    rawTestCases.length > 0
+      ? rawTestCases
+      : testResults.map((tr, index) => ({
+          id: tr.testCaseId || `tc-${index + 1}`,
+          inputData: '',
+          expectedOutput: tr.expectedOutput || '',
+          scoreWeight: 1,
+        }));
   const getTestResult = (tc: TestCaseItem, index: number) =>
     (tc.id ? testResults.find((result) => result.testCaseId === tc.id) : undefined) ?? testResults[index];
 
@@ -368,8 +377,18 @@ export default function GradingResultsPage() {
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                    <CheckCircle2 size={18} />
+                  <div className={`p-2 rounded-lg ${
+                    submission?.totalScore !== null && submission?.totalScore !== undefined
+                      ? Number(submission.totalScore) >= 5.0
+                        ? 'bg-emerald-50 text-emerald-600'
+                        : 'bg-rose-50 text-rose-600'
+                      : 'bg-blue-50 text-blue-600'
+                  }`}>
+                    {submission?.totalScore !== null && submission?.totalScore !== undefined && Number(submission.totalScore) < 5.0 ? (
+                      <XCircle size={18} />
+                    ) : (
+                      <CheckCircle2 size={18} />
+                    )}
                   </div>
                   <h3 className="font-semibold text-slate-900 text-sm">Sandbox test case grading</h3>
                 </div>
@@ -427,10 +446,10 @@ export default function GradingResultsPage() {
 
                         {expandedTestCase === index && (
                           <div className="p-3 bg-white font-mono text-[11px] space-y-2 text-slate-600 border-t border-slate-200 break-words">
-                            <p><span className="text-slate-400">Input:</span> {tc.inputData || '(None)'}</p>
-                            <p><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(None)'}</p>
-                            {result && <p><span className="text-slate-400">Actual output:</span> {result.actualOutput !== undefined && result.actualOutput !== '' ? result.actualOutput : '(Empty output)'}</p>}
-                            {result?.error && <p className="text-rose-700"><span className="text-rose-500">Error:</span> {result.error}</p>}
+                            <p className="whitespace-pre-wrap"><span className="text-slate-400">Input:</span> {tc.inputData || '(None)'}</p>
+                            <p className="whitespace-pre-wrap"><span className="text-slate-400">Expected:</span> {tc.expectedOutput || '(None)'}</p>
+                            {result && <p className="whitespace-pre-wrap"><span className="text-slate-400">Actual output:</span> {result.actualOutput !== undefined && result.actualOutput !== '' ? result.actualOutput : '(Empty output)'}</p>}
+                            {result?.error && <p className="text-rose-700 whitespace-pre-wrap"><span className="text-rose-500">Error:</span> {result.error}</p>}
                             {result?.durationMs !== undefined && <p><span className="text-slate-400">Duration:</span> {result.durationMs} ms</p>}
                           </div>
                         )}

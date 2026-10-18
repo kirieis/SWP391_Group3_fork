@@ -36,8 +36,9 @@ export async function processGradingPipeline(
       message: "Executing test cases...",
     });
 
-    let passedTests = 1;
-    let totalTests = 1;
+    let passedTests = 0;
+    const testCasesList = sub.assignment?.testCases || [];
+    let totalTests = testCasesList.length;
 
     try {
       const controller = new AbortController();
@@ -51,7 +52,7 @@ export async function processGradingPipeline(
           assignmentId: sub.assignmentId,
           language: sub.assignment?.language || "Java",
           zipFilePath: filePath,
-          testCases: sub.assignment?.testCases || [{ inputData: "1", expectedOutput: "1", scoreWeight: 1 }],
+          testCases: testCasesList,
         }),
         signal: controller.signal as any,
       });
@@ -60,16 +61,16 @@ export async function processGradingPipeline(
 
       if (sandboxRes.ok) {
         const sData: any = await sandboxRes.json();
-        passedTests = typeof sData.passedTests === "number" ? sData.passedTests : 1;
-        totalTests = typeof sData.totalTests === "number" ? sData.totalTests : 1;
+        passedTests = typeof sData.passedTests === "number" ? sData.passedTests : 0;
+        totalTests = typeof sData.totalTests === "number" ? sData.totalTests : testCasesList.length;
       } else {
-        console.warn(`[GradingPipeline] Sandbox engine HTTP ${sandboxRes.status}, fallback`);
+        console.warn(`[GradingPipeline] Sandbox engine HTTP ${sandboxRes.status}, fallback to 0 points`);
       }
     } catch (sandboxErr: any) {
-      console.warn("[GradingPipeline] Sandbox engine call failed, fallback");
+      console.warn("[GradingPipeline] Sandbox engine call failed, fallback to 0 points");
     }
 
-    const rawScore = totalTests > 0 ? (passedTests / totalTests) * 10 : 10;
+    const rawScore = totalTests > 0 ? (passedTests / totalTests) * 10 : 0;
     const finalScore = Math.round(rawScore * 10) / 10;
     const finalStatus = astIsPlagiarism ? "SCORE_WITHHELD" : "GRADED";
 

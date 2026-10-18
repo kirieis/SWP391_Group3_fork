@@ -209,7 +209,8 @@ export class MockSandboxClient implements ISandboxClient {
 
   async execute(request: SandboxRequest): Promise<SandboxResponse> {
     this.executionCount++;
-    const filePath = request.fileRelativePath.toLowerCase();
+    const filePath = (request.fileRelativePath || "").toLowerCase();
+    const subId = (request.submissionId || "").toLowerCase();
 
     let outcome: SandboxOutcome = "PASSED";
     let passedTests = 10;
@@ -217,27 +218,65 @@ export class MockSandboxClient implements ISandboxClient {
     let executionTimeMs = 1250;
     let errorMessage: string | undefined;
 
-    if (filePath.includes("timeout")) {
+    if (filePath.includes("timeout") || subId.includes("timeout")) {
       outcome = "TIMEOUT";
       passedTests = 0;
       executionTimeMs = 30_000;
       errorMessage = "Execution exceeded time limit (30s)";
-    } else if (filePath.includes("security_violation")) {
+    } else if (filePath.includes("security_violation") || subId.includes("security_violation")) {
       outcome = "SECURITY_VIOLATION";
       passedTests = 0;
       executionTimeMs = 150;
       errorMessage = "Forbidden system call detected: Runtime.exec()";
-    } else if (filePath.includes("compilation_error")) {
+    } else if (filePath.includes("compilation_error") || subId.includes("compilation_error")) {
       outcome = "COMPILATION_ERROR";
       passedTests = 0;
       executionTimeMs = 80;
       errorMessage =
         "error: incompatible types: String cannot be converted to int";
+    } else if (
+      filePath.includes("fail") ||
+      filePath.includes("wrong") ||
+      filePath.includes("random") ||
+      filePath.includes("bug") ||
+      filePath.includes("bad") ||
+      filePath.includes("zero") ||
+      subId.includes("fail") ||
+      subId.includes("wrong")
+    ) {
+      outcome = "FAILED";
+      passedTests = 0;
+      executionTimeMs = 950;
+      errorMessage = "Test cases failed: output does not match expected output.";
+    } else if (filePath.includes("partial") || filePath.includes("half") || subId.includes("partial")) {
+      outcome = "FAILED";
+      passedTests = 5;
+      executionTimeMs = 1100;
+      errorMessage = "5 out of 10 test cases failed.";
     }
 
+    const testResults: import("../../contracts/sandbox.contract.js").SandboxTestCaseResult[] =
+      totalTests > 0
+        ? Array.from({ length: totalTests }).map((_, idx) => {
+            const isPassed = idx < passedTests;
+            return {
+              testCaseId: `tc-${idx + 1}`,
+              passed: isPassed,
+              actualOutput: isPassed
+                ? `Test case ${idx + 1} passed output`
+                : `Incorrect output on test case ${idx + 1}`,
+              expectedOutput: `Test case ${idx + 1} passed output`,
+              durationMs: 40 + idx * 10,
+              error: isPassed
+                ? undefined
+                : "Output mismatch: expected output did not match actual output",
+            };
+          })
+        : [];
+
     logger.info(
-      { submissionId: request.submissionId, outcome, executionCount: this.executionCount },
-      `[MOCK] Sandbox result: ${outcome}`,
+      { submissionId: request.submissionId, outcome, passedTests, totalTests, executionCount: this.executionCount },
+      `[MOCK] Sandbox result: ${outcome} (${passedTests}/${totalTests})`,
     );
 
     return {
@@ -245,8 +284,9 @@ export class MockSandboxClient implements ISandboxClient {
       passedTests,
       totalTests,
       executionTimeMs,
-      output: outcome === "PASSED" ? "All tests passed" : undefined,
+      output: outcome === "PASSED" ? "All tests passed" : `Passed ${passedTests}/${totalTests} test cases.`,
       errorMessage,
+      testResults,
     };
   }
 }

@@ -249,7 +249,7 @@ export class GradingService {
                     totalScore: calculatedScore,
                     aiFeedback: aiFeedbackText,
                     testResults: JSON.stringify(testResults),
-                },
+                } as any,
             });
 
             emitGradingProgress({
@@ -346,19 +346,51 @@ export class GradingService {
             child.on("close", () => {
                 clearTimeout(timeoutTimer);
                 const durationMs = Date.now() - startTime;
-                const actual = stdout.trim();
-                const expected = expectedOutput.trim();
 
-                // Compare normalized output exactly. Using includes() incorrectly passes
-                // every output when expectedOutput is an empty string.
-                const passed = !killed && child.exitCode === 0 && actual === expected;
+                // Chuẩn hóa xuống dòng (CRLF -> LF) và khoảng trắng cuối mỗi dòng
+                const normalize = (s: string) =>
+                    s
+                        .replace(/\r\n/g, "\n")
+                        .replace(/\r/g, "\n")
+                        .split("\n")
+                        .map((l) => l.trimEnd())
+                        .join("\n")
+                        .trim();
+
+                const actual = normalize(stdout);
+                const expected = normalize(expectedOutput);
+
+                // 1. So sánh chính xác sau khi chuẩn hóa dòng
+                let passed = !killed && child.exitCode === 0 && actual === expected;
+
+                // 2. So sánh theo chuỗi token (nếu các từ/số giống hệt nhau nhưng khác biệt về dấu cách/xuống dòng)
+                if (!passed && !killed && child.exitCode === 0 && expected.length > 0) {
+                    const actualTokens = actual.split(/\s+/).filter(Boolean);
+                    const expectedTokens = expected.split(/\s+/).filter(Boolean);
+                    if (actualTokens.length === expectedTokens.length && actualTokens.length > 0) {
+                        passed = actualTokens.every((tok, idx) => tok === expectedTokens[idx]);
+                    }
+                }
+
+                let errorMsg: string | undefined = undefined;
+                if (!passed) {
+                    if (killed) {
+                        errorMsg = "Execution timed out after 5 seconds.";
+                    } else if (child.exitCode !== 0) {
+                        errorMsg = stderr.trim() || `Process terminated with error code ${child.exitCode}.`;
+                    } else if (stderr.trim()) {
+                        errorMsg = stderr.trim();
+                    } else {
+                        errorMsg = "Output mismatch: expected output did not match actual output.";
+                    }
+                }
 
                 resolve({
                     passed,
                     actualOutput: actual,
                     expectedOutput: expected,
                     durationMs,
-                    ...(!passed ? { error: killed ? "Execution timed out after 5 seconds." : (stderr.trim() || `Process exited with code ${child.exitCode ?? "unknown"}.`) } : {}),
+                    ...(errorMsg ? { error: errorMsg } : {}),
                 });
             });
 

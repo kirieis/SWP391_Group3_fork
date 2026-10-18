@@ -219,8 +219,16 @@ export class ExecutionService {
         testCases = await this.fetchTestCasesFromGateway(req.assignmentId);
       }
       if (testCases.length === 0) {
-        // Fallback default sanity test case
-        testCases = [{ id: 'tc-default', inputData: '', expectedOutput: '', scoreWeight: 10 }];
+        outcome = 'FAILED';
+        errorMsg = 'No test cases configured for this assignment. Cannot evaluate submission.';
+        return {
+          outcome,
+          passedTests: 0,
+          totalTests: 0,
+          executionTimeMs: Date.now() - startTime,
+          errorMessage: errorMsg,
+          testResults: []
+        };
       }
       totalTests = testCases.length;
 
@@ -330,10 +338,27 @@ export class ExecutionService {
           break;
         }
 
-        // Compare output
-        const actual = execResult.stdout.trim().replace(/\r\n/g, '\n');
-        const expected = (tc.expectedOutput || '').trim().replace(/\r\n/g, '\n');
-        const passed = actual === expected;
+        // Compare output with CRLF normalization, line trailing space trimming, and token fallback
+        const normalize = (s: string) =>
+          s
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .split('\n')
+            .map((l) => l.trimEnd())
+            .join('\n')
+            .trim();
+
+        const actual = normalize(execResult.stdout || '');
+        const expected = normalize(tc.expectedOutput || '');
+        let passed = actual === expected;
+
+        if (!passed && expected.length > 0) {
+          const actualTokens = actual.split(/\s+/).filter(Boolean);
+          const expectedTokens = expected.split(/\s+/).filter(Boolean);
+          if (actualTokens.length === expectedTokens.length && actualTokens.length > 0) {
+            passed = actualTokens.every((tok, idx) => tok === expectedTokens[idx]);
+          }
+        }
 
         if (passed) {
           passedTests++;
@@ -345,7 +370,9 @@ export class ExecutionService {
           actualOutput: sanitizeOutput(actual),
           expectedOutput: expected,
           durationMs: execResult.durationMs,
-          error: passed ? undefined : sanitizeOutput(execResult.stderr)
+          error: passed
+            ? undefined
+            : sanitizeOutput(execResult.stderr) || 'Output mismatch: expected output did not match actual output.'
         });
       }
 

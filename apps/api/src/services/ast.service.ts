@@ -364,14 +364,7 @@ export const astService = {
             });
 
             
-            setImmediate(async () => {
-                try {
-                    const { processGradingPipeline } = await import("./grading.pipeline.js");
-                    await processGradingPipeline(submissionId, resolvedPath);
-                } catch (e) { console.error("[Pipeline Trigger Error]:", e); }
-            });
-
-return {
+            return {
                 success: true,
                 status: finalStatus,
                 similarityPercent: maxSimilarity,
