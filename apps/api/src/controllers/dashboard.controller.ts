@@ -11,6 +11,17 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: "Assignment ID is required." });
         }
 
+        const requestedAssignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            select: { id: true, classId: true, class: { select: { lecturerId: true } } },
+        });
+        if (!requestedAssignment) {
+            return res.status(404).json({ success: false, message: "Assignment not found." });
+        }
+        if (req.user?.role === "LECTURER" && requestedAssignment.class.lecturerId !== req.user.userId) {
+            return res.status(403).json({ success: false, message: "You can only view analytics for your own classes." });
+        }
+
         // ━━━ CACHE-ASIDE: stats + plagiarism top-10 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         const statsKey = CacheKey.dashboardStats(req.user?.userId ?? "system", assignmentId);
 
@@ -131,7 +142,49 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: "Assignment not found." });
         }
 
-        return res.json({ success: true, data: result });
+        // Fetch student score rows fresh on every request (not from the analytics cache),
+        // so lecturers see the latest grading result for the selected assignment.
+        const [activeEnrollments, latestSubmissions] = await Promise.all([
+            prisma.classStudent.findMany({
+                where: { classId: requestedAssignment.classId, status: "ACTIVE" },
+                select: {
+                    studentId: true,
+                    student: {
+                        select: {
+                            studentCode: true,
+                            user: { select: { fullName: true, email: true } },
+                        },
+                    },
+                },
+                orderBy: { student: { studentCode: "asc" } },
+            }),
+            prisma.submission.findMany({
+                where: { assignmentId },
+                orderBy: { submittedAt: "desc" },
+                select: { id: true, studentId: true, totalScore: true, status: true, submittedAt: true },
+            }),
+        ]);
+        const latestByStudent = new Map<string, typeof latestSubmissions[number]>();
+        for (const submission of latestSubmissions) {
+            if (!latestByStudent.has(submission.studentId)) latestByStudent.set(submission.studentId, submission);
+        }
+        const studentScores = activeEnrollments.map((enrollment) => {
+            const submission = latestByStudent.get(enrollment.studentId);
+            return {
+                studentId: enrollment.studentId,
+                studentCode: enrollment.student.studentCode,
+                fullName: enrollment.student.user.fullName,
+                email: enrollment.student.user.email,
+                submissionId: submission?.id ?? null,
+                submissionStatus: submission?.status ?? "NOT_SUBMITTED",
+                score: submission?.totalScore ?? null,
+                submittedAt: submission?.submittedAt ?? null,
+                displayScore: submission?.totalScore != null ? Number(submission.totalScore.toFixed(2)) :
+                    (Date.now() > new Date((result as any).assignment.deadline).getTime() && !submission ? "N/A" : null),
+            };
+        });
+
+        return res.json({ success: true, data: { ...result, studentScores } });
     } catch (error) {
         console.error("Error getLecturerAnalytics:", error);
         return res.status(500).json({ success: false, message: "Server error getting statistics." });

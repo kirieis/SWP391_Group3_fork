@@ -279,3 +279,53 @@ export const deleteAssignment = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: "Unable to delete the assignment. It may have related records that prevent deletion." });
     }
 };
+
+
+/**
+ * Internal deadline sweep used by queue-worker. Students who have no submission
+ * remain represented as NOT_SUBMITTED in read models; we do not create fake
+ * submission rows just to store an N/A display state.
+ */
+export const markOverdueAssignment = async (req: Request, res: Response) => {
+    try {
+        const { assignmentId } = req.params;
+        const assignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            select: {
+                id: true,
+                deadline: true,
+                class: {
+                    select: {
+                        students: {
+                            where: { status: "ACTIVE" },
+                            select: { studentId: true },
+                        },
+                    },
+                },
+            },
+        });
+        if (!assignment) {
+            return res.status(404).json({ success: false, message: "Assignment not found." });
+        }
+        if (!assignment.deadline || Date.now() <= assignment.deadline.getTime()) {
+            return res.status(409).json({ success: false, message: "Assignment deadline has not passed yet." });
+        }
+
+        const activeStudentIds = assignment.class.students.map((enrollment) => enrollment.studentId);
+        const submitted = await prisma.submission.findMany({
+            where: { assignmentId, studentId: { in: activeStudentIds } },
+            distinct: ["studentId"],
+            select: { studentId: true },
+        });
+        const submittedIds = new Set(submitted.map((item) => item.studentId));
+        const studentIds = activeStudentIds.filter((studentId) => !submittedIds.has(studentId));
+
+        return res.json({
+            success: true,
+            data: { assignmentId, markedCount: studentIds.length, studentIds, status: "NOT_SUBMITTED" },
+        });
+    } catch (error) {
+        console.error("Error marking overdue assignment:", error);
+        return res.status(500).json({ success: false, message: "Unable to classify students for the overdue assignment." });
+    }
+};

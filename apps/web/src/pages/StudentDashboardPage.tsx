@@ -268,6 +268,23 @@ export default function StudentDashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-evaluate deadlines while the page stays open, so N/A and submit controls
+  // update shortly after the deadline without requiring a manual reload.
+  useEffect(() => {
+    const deadlineTimer = setInterval(() => {
+      const now = Date.now();
+      setAssignments((current) => current.map((item) => ({
+        ...item,
+        isExpired: Boolean(item.rawDeadline && now > new Date(item.rawDeadline).getTime()),
+      })));
+      setSelectedAssignment((current) => current ? {
+        ...current,
+        isExpired: Boolean(current.rawDeadline && now > new Date(current.rawDeadline).getTime()),
+      } : current);
+    }, 5000);
+    return () => clearInterval(deadlineTimer);
+  }, []);
+
   // 3. Xử lý nộp assignments (.zip) thật
   const handleSubmitAssignment = async () => {
     if (!selectedAssignment || !fileToUpload) {

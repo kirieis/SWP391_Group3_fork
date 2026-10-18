@@ -87,7 +87,21 @@ interface AppealItem {
 }
 
 // Kiểu dữ liệu analytics từ backend
+interface StudentScoreItem {
+  studentId: string;
+  studentCode: string;
+  fullName: string;
+  email?: string;
+  submissionId: string | null;
+  submissionStatus: string;
+  score: number | null;
+  submittedAt: string | null;
+  displayScore: number | 'N/A' | null;
+}
+
 interface AnalyticsData {
+  assignment?: { title?: string; deadline?: string; classCode?: string };
+  studentScores?: StudentScoreItem[];
   stats?: {
     totalActiveStudents?: number;
     submittedCount?: number;
@@ -997,6 +1011,34 @@ export default function LecturerDashboardPage() {
                     {analytics?.topPlagiarismMatches?.length ?? 0} pairs
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">AST Winnowing Engine</p>
+                </div>
+              </div>
+
+              {/* Student scores for the currently selected assignment */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">Student scores</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Latest submission score for each active student in the selected assignment.</p>
+                  </div>
+                  <span className="text-xs text-slate-500">{analytics.studentScores?.length ?? 0} students</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead><tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
+                      <th className="py-3 px-3">Student ID</th><th className="py-3 px-3">Student name</th><th className="py-3 px-3 text-center">Submission status</th><th className="py-3 px-3 text-center">Score</th><th className="py-3 px-3">Submitted at</th>
+                    </tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(analytics.studentScores ?? []).map((student) => <tr key={student.studentId} className="hover:bg-slate-50">
+                        <td className="py-3 px-3 font-medium text-slate-700">{student.studentCode}</td>
+                        <td className="py-3 px-3"><div className="font-semibold text-slate-900">{student.fullName}</div><div className="text-[11px] text-slate-500">{student.email}</div></td>
+                        <td className="py-3 px-3 text-center"><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${student.submissionStatus === 'NOT_SUBMITTED' ? 'bg-slate-100 text-slate-600' : student.submissionStatus === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{student.submissionStatus === 'NOT_SUBMITTED' ? 'Not submitted' : student.submissionStatus}</span></td>
+                        <td className="py-3 px-3 text-center font-bold text-slate-900">{student.displayScore === 'N/A' ? <span className="text-slate-500">N/A</span> : student.score != null ? student.score.toFixed(2) : <span className="text-slate-400">Pending</span>}</td>
+                        <td className="py-3 px-3 text-slate-500">{student.submittedAt ? new Date(student.submittedAt).toLocaleString() : '—'}</td>
+                      </tr>)}
+                      {(analytics.studentScores ?? []).length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-500">No active students in this class.</td></tr>}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 

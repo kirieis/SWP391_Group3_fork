@@ -1,11 +1,14 @@
 import { Router } from "express";
-import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments, deleteAssignment } from "../controllers/assignment.controller.js";
+import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments, deleteAssignment, markOverdueAssignment } from "../controllers/assignment.controller.js";
 import { authenticateJWT, authorizeRole, requireInternalApiKey } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 // Lấy danh sách bài tập (Sinh viên/Giảng viên)
 router.get("/", authenticateJWT, getAssignments);
+
+// Internal worker deadline sweep: classify active students without submissions.
+router.post("/:assignmentId/mark-overdue", requireInternalApiKey, markOverdueAssignment);
 
 // Sandbox Engine chỉ được đọc test case qua Internal API Key.
 router.get("/internal/:assignmentId", requireInternalApiKey, getAssignmentForSandbox);
