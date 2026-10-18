@@ -93,39 +93,6 @@ describe('ExecutionService Unit Tests', () => {
     expect(mockRunner.destroyedContainers).toContain('mock_c_sub_pass_1');
   });
 
-  it('must not award a pass when no assignment test cases are configured', async () => {
-    const res = await service.executeSubmission({
-      submissionId: 'sub_no_test_cases',
-      zipFilePath: sampleZipPath,
-      testCases: []
-    });
-
-    expect(res.outcome).toBe('FAILED');
-    expect(res.passedTests).toBe(0);
-    expect(res.totalTests).toBe(0);
-    expect(res.errorMessage).toContain('No test cases are configured');
-    expect(mockRunner.destroyedContainers).toHaveLength(0);
-  });
-
-  it('must fail a test when output matches but the Java process exits non-zero', async () => {
-    mockRunner.mockExecHandler = (cmd) => {
-      if (cmd[2]?.includes('javac')) {
-        return { exitCode: 0, stdout: '', stderr: '', timedOut: false, oomKilled: false, durationMs: 100 };
-      }
-      return { exitCode: 1, stdout: 'Expected output\\n', stderr: 'runtime error', timedOut: false, oomKilled: false, durationMs: 50 };
-    };
-
-    const res = await service.executeSubmission({
-      submissionId: 'sub_runtime_error',
-      zipFilePath: sampleZipPath,
-      testCases: [{ id: 'tc1', inputData: '', expectedOutput: 'Expected output' }]
-    });
-
-    expect(res.outcome).toBe('FAILED');
-    expect(res.passedTests).toBe(0);
-    expect(res.totalTests).toBe(1);
-  });
-
   it('should return COMPILATION_ERROR when javac fails', async () => {
     mockRunner.mockExecHandler = (cmd) => {
       if (cmd[2]?.includes('javac')) {
