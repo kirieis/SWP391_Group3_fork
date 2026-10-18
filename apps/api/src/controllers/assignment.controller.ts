@@ -65,24 +65,52 @@ export const cloneAssignment = async (req: Request, res: Response) => {
             });
         }
 
-        // Lấy đề bài gốc kèm test cases
+        const user = req.user;
+        if (!user?.userId) {
+            return res.status(401).json({ success: false, message: "Unauthorized." });
+        }
+
+        // Only allow lecturers to copy assignments they own and into their own classes.
+        const targetClass = await prisma.class.findUnique({
+            where: { id: targetClassId },
+            select: { id: true, lecturerId: true },
+        });
+
+        if (!targetClass) {
+            return res.status(404).json({ success: false, message: "Target class not found." });
+        }
+
+        if (user.role === "LECTURER" && targetClass.lecturerId !== user.userId) {
+            return res.status(403).json({ success: false, message: "You can only copy assignments into your own classes." });
+        }
+
+        // Load the source assignment and test cases.
         const source = await prisma.assignment.findUnique({
             where: { id: sourceAssignmentId },
-            include: { testCases: true },
+            include: { testCases: true, class: { select: { lecturerId: true } } },
         });
 
         if (!source) {
             return res.status(404).json({ success: false, message: "Assignment not found." });
         }
 
-        // Tạo bản sao sang lớp mới
+        if (user.role === "LECTURER" && source.class.lecturerId !== user.userId) {
+            return res.status(403).json({ success: false, message: "You can only copy assignments you created in classes you manage." });
+        }
+
+        const parsedDeadline = new Date(newDeadline);
+        if (Number.isNaN(parsedDeadline.getTime())) {
+            return res.status(400).json({ success: false, message: "Please provide a valid deadline." });
+        }
+
+        // Create a copy in the target class. The source assignment remains unchanged.
         const cloned = await prisma.assignment.create({
             data: {
                 classId: targetClassId,
                 title: `${source.title} (Clone)`,
                 description: source.description,
                 language: source.language,
-                deadline: new Date(newDeadline),
+                deadline: parsedDeadline,
                 gradingCriteria: source.gradingCriteria,
                 testCases: {
                     create: source.testCases.map((tc) => ({

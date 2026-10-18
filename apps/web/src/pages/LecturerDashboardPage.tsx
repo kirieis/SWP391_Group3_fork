@@ -42,8 +42,12 @@ interface ClassItem {
 // Kiểu dữ liệu assignments từ backend
 interface AssignmentItem {
   id: string;
+  classId: string;
   title: string;
   description?: string | null;
+  language?: string;
+  deadline?: string;
+  class?: { classCode?: string };
   [key: string]: unknown;
 }
 
@@ -158,6 +162,13 @@ export default function LecturerDashboardPage() {
   const [generationDifficulty, setGenerationDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [generatingAssignment, setGeneratingAssignment] = useState<boolean>(false);
   const [generationNotice, setGenerationNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [assignmentCreateMode, setAssignmentCreateMode] = useState<'NEW' | 'EXISTING'>('NEW');
+  const [existingAssignments, setExistingAssignments] = useState<AssignmentItem[]>([]);
+  const [existingAssignmentsLoading, setExistingAssignmentsLoading] = useState<boolean>(false);
+  const [existingAssignmentsError, setExistingAssignmentsError] = useState<string>('');
+  const [existingAssignmentClassFilters, setExistingAssignmentClassFilters] = useState<string[]>([]);
+  const [selectedSourceAssignmentId, setSelectedSourceAssignmentId] = useState<string>('');
+  const [targetExistingClassId, setTargetExistingClassId] = useState<string>('');
 
   // loadClasses, loadPendingAppeals được khai báo bên dưới; useEffect gọi chúng sau khi JSX đã sẵn sàng
 
@@ -279,6 +290,55 @@ export default function LecturerDashboardPage() {
     } else {
       setClassesError(res.message || 'Unable to load classes.');
       setClasses([]);
+    }
+  };
+
+  const loadExistingAssignments = async () => {
+    setExistingAssignmentsLoading(true);
+    setExistingAssignmentsError('');
+    const res = await apiRequest<AssignmentItem[]>('/assignments');
+    setExistingAssignmentsLoading(false);
+
+    if (res.success && Array.isArray(res.data)) {
+      setExistingAssignments(res.data);
+      setExistingAssignmentClassFilters([]);
+      setSelectedSourceAssignmentId((current) =>
+        res.data?.some((assignment) => assignment.id === current) ? current : ''
+      );
+    } else {
+      setExistingAssignments([]);
+      setExistingAssignmentsError(res.message || 'Unable to load your existing assignments.');
+    }
+  };
+
+  const handleCloneExistingAssignment = async () => {
+    const targetClassId = targetExistingClassId || selectedClassId;
+    if (!selectedSourceAssignmentId || !targetClassId || !newDeadline) {
+      setCreateAssignmentError('Select an existing assignment, a target class, and a new deadline.');
+      return;
+    }
+
+    setCreatingAssignment(true);
+    setCreateAssignmentError('');
+    const res = await apiRequest('/assignments/clone', {
+      method: 'POST',
+      body: JSON.stringify({
+        sourceAssignmentId: selectedSourceAssignmentId,
+        targetClassId,
+        newDeadline: new Date(newDeadline).toISOString(),
+      }),
+    });
+    setCreatingAssignment(false);
+
+    if (res.success) {
+      setShowCreateModal(false);
+      setAssignmentCreateMode('NEW');
+      setSelectedSourceAssignmentId('');
+      setTargetExistingClassId('');
+      setSelectedClassId(targetClassId);
+      await loadAssignmentsForClass(targetClassId);
+    } else {
+      setCreateAssignmentError(res.message || 'Unable to reuse this assignment.');
     }
   };
 
@@ -496,7 +556,11 @@ export default function LecturerDashboardPage() {
             {[
               { id: 'DASHBOARD', label: 'Dashboard', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
               { id: 'CREATE_CLASS', label: 'Create new class', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
-              { id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => setShowCreateModal(true) },
+              { id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => {
+                setAssignmentCreateMode('NEW');
+                setCreateAssignmentError('');
+                setShowCreateModal(true);
+              } },
               { id: 'IMPORT_STUDENTS', label: 'Import students (Excel)', icon: Upload, action: () => setShowImportModal(true) },
               { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
               {
@@ -1223,6 +1287,124 @@ export default function LecturerDashboardPage() {
             </div>
 
             <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentCreateMode('NEW');
+                    setCreateAssignmentError('');
+                  }}
+                  className={`rounded-lg px-3 py-2 font-semibold transition ${assignmentCreateMode === 'NEW' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  Create new
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentCreateMode('EXISTING');
+                    setCreateAssignmentError('');
+                    setTargetExistingClassId(selectedClassId);
+                    if (existingAssignments.length === 0) loadExistingAssignments();
+                  }}
+                  className={`rounded-lg px-3 py-2 font-semibold transition ${assignmentCreateMode === 'EXISTING' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  Choose existing
+                </button>
+              </div>
+
+              {assignmentCreateMode === 'EXISTING' ? (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-semibold text-slate-900">Your existing assignments</h4>
+                    <p className="mt-1 text-slate-500">Choose an assignment to copy into the selected target class. Its description and test cases will be copied too.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="font-semibold text-slate-700">Filter by source class</p>
+                    <div className="max-h-28 overflow-y-auto rounded-xl border border-slate-200 p-2 space-y-1.5">
+                      {classes.length === 0 ? (
+                        <p className="p-2 text-slate-500">No classes available.</p>
+                      ) : classes.map((classItem) => (
+                        <label key={classItem.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={existingAssignmentClassFilters.includes(classItem.id)}
+                            onChange={(event) => setExistingAssignmentClassFilters((current) =>
+                              event.target.checked
+                                ? [...current, classItem.id]
+                                : current.filter((id) => id !== classItem.id)
+                            )}
+                          />
+                          <span>{classItem.classCode}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-slate-500">Leave all classes unchecked to show assignments from every class you manage.</p>
+                  </div>
+
+                  {existingAssignmentsLoading ? (
+                    <div className="flex items-center gap-2 py-4 text-slate-500"><Loader2 size={14} className="animate-spin" /> Loading assignments...</div>
+                  ) : existingAssignmentsError ? (
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">
+                      <span>{existingAssignmentsError}</span>
+                      <button type="button" onClick={loadExistingAssignments} className="font-semibold underline">Retry</button>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full min-w-[420px] text-left">
+                        <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                          <tr>
+                            <th className="p-2.5">Select</th>
+                            <th className="p-2.5">Assignment</th>
+                            <th className="p-2.5">Source class</th>
+                            <th className="p-2.5">Language</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {existingAssignments
+                            .filter((assignment) => existingAssignmentClassFilters.length === 0 || existingAssignmentClassFilters.includes(assignment.classId))
+                            .map((assignment) => (
+                              <tr key={assignment.id} className="border-t border-slate-100 hover:bg-slate-50">
+                                <td className="p-2.5">
+                                  <input
+                                    type="radio"
+                                    name="existingAssignment"
+                                    checked={selectedSourceAssignmentId === assignment.id}
+                                    onChange={() => setSelectedSourceAssignmentId(assignment.id)}
+                                    aria-label={`Select ${assignment.title}`}
+                                  />
+                                </td>
+                                <td className="p-2.5">
+                                  <p className="font-semibold text-slate-800">{assignment.title}</p>
+                                  {assignment.description && <p className="mt-1 max-w-xs line-clamp-2 text-[11px] text-slate-500">{assignment.description}</p>}
+                                </td>
+                                <td className="p-2.5">{assignment.class?.classCode || classes.find((item) => item.id === assignment.classId)?.classCode || 'Unknown class'}</td>
+                                <td className="p-2.5">{assignment.language || 'N/A'}</td>
+                              </tr>
+                            ))}
+                          {existingAssignments.filter((assignment) => existingAssignmentClassFilters.length === 0 || existingAssignmentClassFilters.includes(assignment.classId)).length === 0 && (
+                            <tr><td colSpan={4} className="p-5 text-center text-slate-500">No assignments match the selected class filters.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block font-medium text-slate-700">Target class</label>
+                      <select value={targetExistingClassId || selectedClassId} onChange={(event) => setTargetExistingClassId(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                        {classes.map((classItem) => <option key={classItem.id} value={classItem.id}>{classItem.classCode}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block font-medium text-slate-700">New deadline</label>
+                      <input type="datetime-local" value={newDeadline} onChange={(event) => setNewDeadline(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
                 <div className="flex items-center gap-2 font-semibold text-indigo-900">
                   <Sparkles size={15} />
@@ -1379,6 +1561,8 @@ export default function LecturerDashboardPage() {
                   ))}
                 </div>
               </div>
+                </>
+              )}
 
               {createAssignmentError && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
@@ -1397,12 +1581,12 @@ export default function LecturerDashboardPage() {
                 Cancel
               </button>
               <button
-                disabled={creatingAssignment}
-                onClick={handleCreateAssignment}
+                disabled={creatingAssignment || (assignmentCreateMode === 'EXISTING' && (!selectedSourceAssignmentId || !(targetExistingClassId || selectedClassId)))}
+                onClick={assignmentCreateMode === 'EXISTING' ? handleCloneExistingAssignment : handleCreateAssignment}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
               >
                 {creatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
-                <span>{creatingAssignment ? 'Creating...' : 'Create assignment'}</span>
+                <span>{creatingAssignment ? (assignmentCreateMode === 'EXISTING' ? 'Copying...' : 'Creating...') : (assignmentCreateMode === 'EXISTING' ? 'Use selected assignment' : 'Create assignment')}</span>
               </button>
             </div>
           </div>
