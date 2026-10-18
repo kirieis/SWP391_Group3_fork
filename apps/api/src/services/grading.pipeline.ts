@@ -36,10 +36,19 @@ export async function processGradingPipeline(
       message: "Executing test cases...",
     });
 
-    let passedTests = 1;
-    let totalTests = 1;
+    let passedTests = 0;
+    let totalTests = 0;
+    let sandboxGradingError: string | null = null;
+
+    const configuredTestCases = sub.assignment?.testCases || [];
+    if (configuredTestCases.length === 0) {
+      sandboxGradingError = 'No test cases are configured for this assignment.';
+    }
 
     try {
+      if (sandboxGradingError) {
+        throw new Error(sandboxGradingError);
+      }
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
 
@@ -51,25 +60,50 @@ export async function processGradingPipeline(
           assignmentId: sub.assignmentId,
           language: sub.assignment?.language || "Java",
           zipFilePath: filePath,
-          testCases: sub.assignment?.testCases || [{ inputData: "1", expectedOutput: "1", scoreWeight: 1 }],
+          testCases: configuredTestCases,
         }),
         signal: controller.signal as any,
       });
 
       clearTimeout(timeout);
 
-      if (sandboxRes.ok) {
-        const sData: any = await sandboxRes.json();
-        passedTests = typeof sData.passedTests === "number" ? sData.passedTests : 1;
-        totalTests = typeof sData.totalTests === "number" ? sData.totalTests : 1;
-      } else {
-        console.warn(`[GradingPipeline] Sandbox engine HTTP ${sandboxRes.status}, fallback`);
+      if (!sandboxRes.ok) {
+        throw new Error(`Sandbox engine HTTP ${sandboxRes.status}`);
       }
+
+      const sData: any = await sandboxRes.json();
+      if (
+        !Number.isInteger(sData?.passedTests) ||
+        !Number.isInteger(sData?.totalTests) ||
+        sData.totalTests <= 0 ||
+        sData.passedTests < 0 ||
+        sData.passedTests > sData.totalTests
+      ) {
+        throw new Error("Sandbox returned invalid test counts.");
+      }
+
+      passedTests = sData.passedTests;
+      totalTests = sData.totalTests;
     } catch (sandboxErr: any) {
-      console.warn("[GradingPipeline] Sandbox engine call failed, fallback");
+      sandboxGradingError = sandboxErr?.message || "Sandbox grading failed.";
+      console.error(`[GradingPipeline] ${sandboxGradingError}`);
+      await prisma.submission.update({
+        where: { id: submissionId },
+        data: {
+          status: "FAILED",
+          totalScore: 0,
+        },
+      });
+      emitGradingProgress({
+        submissionId,
+        step: "COMPLETE",
+        progressPercent: 100,
+        message: `Grading failed; no score was awarded. ${sandboxGradingError}`,
+      });
+      return;
     }
 
-    const rawScore = totalTests > 0 ? (passedTests / totalTests) * 10 : 10;
+    const rawScore = (passedTests / totalTests) * 10;
     const finalScore = Math.round(rawScore * 10) / 10;
     const finalStatus = astIsPlagiarism ? "SCORE_WITHHELD" : "GRADED";
 

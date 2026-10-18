@@ -218,9 +218,31 @@ export class ExecutionService {
       if (testCases.length === 0 && req.assignmentId) {
         testCases = await this.fetchTestCasesFromGateway(req.assignmentId);
       }
+      // Never invent a default test case: an empty expected output would let
+      // arbitrary programs pass without exercising the assignment's tests.
       if (testCases.length === 0) {
-        // Fallback default sanity test case
-        testCases = [{ id: 'tc-default', inputData: '', expectedOutput: '', scoreWeight: 10 }];
+        outcome = 'FAILED';
+        errorMsg = 'No test cases are configured for this assignment; grading cannot be completed.';
+        return {
+          outcome,
+          passedTests: 0,
+          totalTests: 0,
+          executionTimeMs: Date.now() - startTime,
+          errorMessage: errorMsg
+        };
+      }
+
+      // A malformed test case must not silently become an empty-output test.
+      if (testCases.some((tc) => typeof tc.expectedOutput !== 'string')) {
+        outcome = 'FAILED';
+        errorMsg = 'Invalid test case configuration: expectedOutput is required for every test case.';
+        return {
+          outcome,
+          passedTests: 0,
+          totalTests: testCases.length,
+          executionTimeMs: Date.now() - startTime,
+          errorMessage: errorMsg
+        };
       }
       totalTests = testCases.length;
 
@@ -332,8 +354,9 @@ export class ExecutionService {
 
         // Compare output
         const actual = execResult.stdout.trim().replace(/\r\n/g, '\n');
-        const expected = (tc.expectedOutput || '').trim().replace(/\r\n/g, '\n');
-        const passed = actual === expected;
+        const expected = tc.expectedOutput!.trim().replace(/\r\n/g, '\n');
+        // Matching stdout is insufficient if the student's process exited with an error.
+        const passed = execResult.exitCode === 0 && actual === expected;
 
         if (passed) {
           passedTests++;

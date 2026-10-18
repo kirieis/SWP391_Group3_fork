@@ -15,7 +15,7 @@ export const ExecuteRequestSchema = z.object({
       z.object({
         id: z.string().optional(),
         inputData: z.string().optional().default(''),
-        expectedOutput: z.string().optional().default(''),
+        expectedOutput: z.string(),
         scoreWeight: z.number().optional().default(1)
       })
     )
