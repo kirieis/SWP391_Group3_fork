@@ -211,11 +211,19 @@ export class MockSandboxClient implements ISandboxClient {
     this.executionCount++;
     const filePath = request.fileRelativePath.toLowerCase();
 
-    let outcome: SandboxOutcome = "PASSED";
-    let passedTests = 10;
+    const isExplicitPass =
+      filePath.includes("happy_path") ||
+      filePath.includes("abc123") ||
+      filePath.includes("pass") ||
+      filePath.includes("correct") ||
+      filePath.includes("sum_10") ||
+      filePath.includes("echo_10");
+
+    let outcome: SandboxOutcome = "FAILED";
+    let passedTests = 0;
     const totalTests = 10;
     let executionTimeMs = 1250;
-    let errorMessage: string | undefined;
+    let errorMessage: string | undefined = "Wrong Answer: 0/10 test cases passed.";
 
     if (filePath.includes("timeout")) {
       outcome = "TIMEOUT";
@@ -233,6 +241,14 @@ export class MockSandboxClient implements ISandboxClient {
       executionTimeMs = 80;
       errorMessage =
         "error: incompatible types: String cannot be converted to int";
+    } else if (isExplicitPass) {
+      outcome = "PASSED";
+      passedTests = 10;
+      errorMessage = undefined;
+    } else {
+      outcome = "FAILED";
+      passedTests = 0;
+      errorMessage = "Wrong Answer: Code không khớp với các test cases yêu cầu (0/10 passed).";
     }
 
     logger.info(
