@@ -27,6 +27,7 @@ export const SubmissionJobPayloadSchema = z.object({
   language: z.string().min(1, "language is required"),
   fileRelativePath: z.string().min(1, "fileRelativePath is required"),
   submittedAt: z.string().datetime({ offset: true }).or(z.string().datetime()),
+  deadline: z.string().datetime({ offset: true }).or(z.string().datetime()).optional(),
   // Milestone 3 additions [ASSUMPTION]
   reason: z.enum(["INITIAL", "REGRADE", "BATCH"]).default("INITIAL"),
   gradingRunNo: z.number().int().positive().default(1),
