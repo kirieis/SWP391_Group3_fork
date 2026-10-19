@@ -105,7 +105,7 @@ export class GradingService {
                     progressPercent: 100,
                     message: "Lỗi biên dịch: Không tìm thấy file nguồn .java trong file nén.",
                 });
-                await astService.check(submissionId, resolvedZipPath).catch(() => {});
+                await astService.check(submissionId, resolvedZipPath).catch(() => { });
                 this.cleanupTempDir(tempDir);
                 return;
             }
@@ -157,7 +157,7 @@ export class GradingService {
                     progressPercent: 100,
                     message: `Lỗi biên dịch: ${compileSuccess.error?.slice(0, 200)}`,
                 });
-                await astService.check(submissionId, resolvedZipPath).catch(() => {});
+                await astService.check(submissionId, resolvedZipPath).catch(() => { });
                 this.cleanupTempDir(tempDir);
                 return;
             }
@@ -210,7 +210,8 @@ export class GradingService {
             }
 
             // Score is based only on configured test cases; zero test cases means zero, not 10/10.
-            const calculatedScore = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 100 * 10) / 10 : 0;
+            const calculatedScore = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 10 * 10) / 10 : 0; // Thang 10 thay vì 100
+
             console.log(`[GradingService] Kết quả test cases: ${passedCount}/${testCases.length} đạt. Điểm: ${calculatedScore}/100`);
 
             // Bước 4: AST ANALYSIS (Kiểm tra đạo văn Winnowing)
@@ -270,7 +271,7 @@ export class GradingService {
                     where: { id: submissionId },
                     data: { status: "FAILED" },
                 })
-                .catch(() => {});
+                .catch(() => { });
         } finally {
             if (tempDir) {
                 this.cleanupTempDir(tempDir);
