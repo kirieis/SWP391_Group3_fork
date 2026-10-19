@@ -9,7 +9,7 @@ import { astService } from "../services/ast.service.js";
 import { gradingService } from "../services/grading.service.js";
 
 // Giới hạn số lần nộp tối đa theo Risk R01 (mặc định 5 lần)
-const MAX_SUBMISSION_ATTEMPTS = 5;
+const MAX_SUBMISSION_ATTEMPTS = 25;
 
 // 1. Nộp bài tập (US12 & Risk R01)
 export const submitAssignment = async (req: Request, res: Response) => {
