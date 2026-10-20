@@ -37,6 +37,8 @@ export { createProvider } from "./providers/index.js";
 // Prompt builders & constants
 export {
   buildAssignmentGenerationPrompt,
+  buildDocumentGuidedAssignmentPrompt,
+  buildRegenerateTestCasesPrompt,
   buildCleanCodeReviewPrompt,
   buildErrorExplanationPrompt,
   BENCHMARK_PROMPTS,

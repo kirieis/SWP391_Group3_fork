@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { LEVEL_STYLE, resolveLevel } from '../features/plagiarism/level';
+import { DocumentAssignmentWizard } from '../components/assignment-wizard/DocumentAssignmentWizard';
 
 // Kiểu dữ liệu lớp học từ backend
 interface ClassItem {
@@ -48,6 +49,7 @@ interface AssignmentItem {
   description?: string | null;
   language?: string;
   deadline?: string;
+  status?: 'DRAFT' | 'PUBLISHED';
   class?: { classCode?: string };
   [key: string]: unknown;
 }
@@ -137,7 +139,7 @@ export default function LecturerDashboardPage() {
   const [assignmentsError, setAssignmentsError] = useState<string>('');
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('');
-  const [assignmentDeadlineTab, setAssignmentDeadlineTab] = useState<'ACTIVE' | 'END'>('ACTIVE');
+  const [assignmentDeadlineTab, setAssignmentDeadlineTab] = useState<'ACTIVE' | 'END' | 'DRAFT'>('ACTIVE');
 
   // Trạng thái Thống kê Analytics
   const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(false);
@@ -625,9 +627,14 @@ export default function LecturerDashboardPage() {
 
   const isAssignmentExpired = (assignment: AssignmentItem) =>
     Boolean(assignment.deadline && Date.now() > new Date(assignment.deadline).getTime());
-  const deadlineFilteredAssignments = assignments.filter((assignment) =>
-    assignmentDeadlineTab === 'END' ? isAssignmentExpired(assignment) : !isAssignmentExpired(assignment)
-  );
+  const deadlineFilteredAssignments = assignments.filter((assignment) => {
+    if (assignmentDeadlineTab === 'DRAFT') {
+      return assignment.status === 'DRAFT';
+    }
+    // Đối với ACTIVE hoặc END, chỉ lấy assignment không phải DRAFT (hoặc PUBLISHED)
+    if (assignment.status === 'DRAFT') return false;
+    return assignmentDeadlineTab === 'END' ? isAssignmentExpired(assignment) : !isAssignmentExpired(assignment);
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex">
@@ -757,27 +764,36 @@ export default function LecturerDashboardPage() {
                   </button>
                 )}
 
-                {/* Active and End assignment tabs */}
+                {/* Active, End and Draft assignment tabs */}
                 {assignments.length > 0 && (
                   <div className="ml-2 flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
                     <button type="button" onClick={() => {
                       setAssignmentDeadlineTab('ACTIVE');
-                      const firstActive = assignments.find((item) => !isAssignmentExpired(item));
+                      const firstActive = assignments.find((item) => item.status !== 'DRAFT' && !isAssignmentExpired(item));
                       if (firstActive) handleSelectAssignment(firstActive.id);
                     }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${assignmentDeadlineTab === 'ACTIVE' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                      Active ({assignments.filter((item) => !isAssignmentExpired(item)).length})
+                      Active ({assignments.filter((item) => item.status !== 'DRAFT' && !isAssignmentExpired(item)).length})
                     </button>
                     <button type="button" onClick={() => {
                       setAssignmentDeadlineTab('END');
-                      const firstEnded = assignments.find((item) => isAssignmentExpired(item));
+                      const firstEnded = assignments.find((item) => item.status !== 'DRAFT' && isAssignmentExpired(item));
                       if (firstEnded) handleSelectAssignment(firstEnded.id);
                     }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${assignmentDeadlineTab === 'END' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                      End ({assignments.filter((item) => isAssignmentExpired(item)).length})
+                      End ({assignments.filter((item) => item.status !== 'DRAFT' && isAssignmentExpired(item)).length})
+                    </button>
+                    <button type="button" onClick={() => {
+                      setAssignmentDeadlineTab('DRAFT');
+                      const firstDraft = assignments.find((item) => item.status === 'DRAFT');
+                      if (firstDraft) handleSelectAssignment(firstDraft.id);
+                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${assignmentDeadlineTab === 'DRAFT' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                      Drafts ({assignments.filter((item) => item.status === 'DRAFT').length})
                     </button>
                   </div>
                 )}
                 {assignments.length > 0 && deadlineFilteredAssignments.length === 0 && (
-                  <span className="ml-2 text-xs text-slate-400">{assignmentDeadlineTab === 'ACTIVE' ? 'No active assignments.' : 'No ended assignments.'}</span>
+                  <span className="ml-2 text-xs text-slate-400">
+                    {assignmentDeadlineTab === 'ACTIVE' ? 'No active assignments.' : assignmentDeadlineTab === 'END' ? 'No ended assignments.' : 'No draft assignments.'}
+                  </span>
                 )}
                 {deadlineFilteredAssignments.length > 0 && (
                   <>
@@ -785,7 +801,11 @@ export default function LecturerDashboardPage() {
                     <select value={deadlineFilteredAssignments.some((item) => item.id === selectedAssignmentId) ? selectedAssignmentId : deadlineFilteredAssignments[0].id}
                       onChange={(e) => handleSelectAssignment(e.target.value)}
                       className="text-xs bg-slate-100 text-slate-800 px-3 py-1.5 rounded-xl font-medium border border-slate-200 outline-none">
-                      {deadlineFilteredAssignments.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
+                      {deadlineFilteredAssignments.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.status === 'DRAFT' ? `[DRAFT] ${a.title}` : a.title}
+                        </option>
+                      ))}
                     </select>
                   </>
                 )}
@@ -1413,7 +1433,7 @@ export default function LecturerDashboardPage() {
       {/* Modal Tạo Bài Tập Mới Thật */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden shadow-2xl">
+          <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-4xl h-[85vh] max-h-[820px] min-h-[640px] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex shrink-0 items-center justify-between px-6 pt-6 pb-3 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-900">Create assignment</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
@@ -1422,16 +1442,27 @@ export default function LecturerDashboardPage() {
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-4 space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+              <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentCreateMode('AI_DOC' as any);
+                    setCreateAssignmentError('');
+                  }}
+                  className={`rounded-lg px-2 py-2 font-semibold transition flex items-center justify-center gap-1.5 ${assignmentCreateMode === ('AI_DOC' as any) ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  <Sparkles size={13} />
+                  <span>AI Syllabus Wizard</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setAssignmentCreateMode('NEW');
                     setCreateAssignmentError('');
                   }}
-                  className={`rounded-lg px-3 py-2 font-semibold transition ${assignmentCreateMode === 'NEW' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`rounded-lg px-2 py-2 font-semibold transition ${assignmentCreateMode === 'NEW' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                 >
-                  Create new
+                  Create manual
                 </button>
                 <button
                   type="button"
@@ -1441,13 +1472,30 @@ export default function LecturerDashboardPage() {
                     setTargetExistingClassId(selectedClassId);
                     if (existingAssignments.length === 0) loadExistingAssignments();
                   }}
-                  className={`rounded-lg px-3 py-2 font-semibold transition ${assignmentCreateMode === 'EXISTING' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`rounded-lg px-2 py-2 font-semibold transition ${assignmentCreateMode === 'EXISTING' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   Choose existing
                 </button>
               </div>
 
-              {assignmentCreateMode === 'EXISTING' ? (
+              {/* 1. CHẾ ĐỘ 1: AI SYLLABUS WIZARD (ĐỘC LẬP HOÀN TOÀN) */}
+              {assignmentCreateMode === ('AI_DOC' as any) && (
+                <div className="py-1">
+                  <DocumentAssignmentWizard
+                    classes={classes.map((c) => ({ id: c.id, classCode: c.classCode }))}
+                    defaultClassId={selectedClassId}
+                    onSuccess={() => {
+                      setShowCreateModal(false);
+                      setAssignmentCreateMode('NEW');
+                      loadAssignmentsForClass(selectedClassId);
+                    }}
+                    onCancel={() => setShowCreateModal(false)}
+                  />
+                </div>
+              )}
+
+              {/* 2. CHẾ ĐỘ 2: CHOOSE EXISTING ASSIGNMENT */}
+              {assignmentCreateMode === 'EXISTING' && (
                 <div className="space-y-4">
                   <div>
                     <h4 className="font-semibold text-slate-900">Your existing assignments</h4>
@@ -1538,7 +1586,10 @@ export default function LecturerDashboardPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {/* 3. CHẾ ĐỘ 3: CREATE MANUAL (CHỈ HIỂN THỊ KHI CHỌN TAB 'Create manual') */}
+              {assignmentCreateMode === 'NEW' && (
                 <>
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
                 <div className="flex items-center gap-2 font-semibold text-indigo-900">
@@ -1707,23 +1758,25 @@ export default function LecturerDashboardPage() {
               )}
             </div>
 
-            <div className="shrink-0 flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-white">
-              <button
-                disabled={creatingAssignment}
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={creatingAssignment || (assignmentCreateMode === 'EXISTING' && (!selectedSourceAssignmentId || !(targetExistingClassId || selectedClassId)))}
-                onClick={assignmentCreateMode === 'EXISTING' ? handleCloneExistingAssignment : handleCreateAssignment}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {creatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
-                <span>{creatingAssignment ? (assignmentCreateMode === 'EXISTING' ? 'Copying...' : 'Creating...') : (assignmentCreateMode === 'EXISTING' ? 'Use selected assignment' : 'Create assignment')}</span>
-              </button>
-            </div>
+            {assignmentCreateMode !== ('AI_DOC' as any) && (
+              <div className="shrink-0 flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-white">
+                <button
+                  disabled={creatingAssignment}
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={creatingAssignment || (assignmentCreateMode === 'EXISTING' && (!selectedSourceAssignmentId || !(targetExistingClassId || selectedClassId)))}
+                  onClick={assignmentCreateMode === 'EXISTING' ? handleCloneExistingAssignment : handleCreateAssignment}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {creatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <PlusCircle size={14} />}
+                  <span>{creatingAssignment ? (assignmentCreateMode === 'EXISTING' ? 'Copying...' : 'Creating...') : (assignmentCreateMode === 'EXISTING' ? 'Use selected assignment' : 'Create assignment')}</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -65,6 +65,120 @@ Please provide the complete assignment with test cases.`,
   };
 }
 
+const DOCUMENT_GUIDED_ASSIGNMENT_SYSTEM = `You are an expert programming instructor creating practical university coding assignments based on course syllabus or slides.
+Generate assignments strictly based on the provided chapter material.
+
+RULES:
+- Each problem must be clear, practical, and written in English.
+- Requirements must include:
+  1. Problem Statement
+  2. Input / Output Format Specification
+  3. Constraints
+- For each assignment, generate exactly the requested number of test cases.
+- Test case weights must be positive integers and sum to 100 per assignment.
+- Output strictly in valid JSON matching the schema below.
+
+OUTPUT FORMAT (strict JSON, no markdown outside JSON):
+{
+  "assignments": [
+    {
+      "title": "string",
+      "description": "string",
+      "testCases": [
+        {
+          "input": "string (stdin)",
+          "expectedOutput": "string (expected stdout)",
+          "scoreWeight": number,
+          "label": "string"
+        }
+      ]
+    }
+  ]
+}`;
+
+export interface DocumentPromptOptions {
+  chapterTitle: string;
+  chapterContext: string;
+  language: string;
+  difficulty?: "easy" | "medium" | "hard";
+  questionsCount?: number;
+  testCasesCount?: number;
+}
+
+export function buildDocumentGuidedAssignmentPrompt(
+  options: DocumentPromptOptions
+): PromptPayload {
+  const {
+    chapterTitle,
+    chapterContext,
+    language,
+    difficulty = "medium",
+    questionsCount = 1,
+    testCasesCount = 3,
+  } = options;
+
+  // Cắt ngắn trích đoạn nếu quá dài để tránh vượt trần TPM (Tokens Per Minute)
+  const safeSnippet = (chapterContext || "").slice(0, 3200).trim();
+
+  return {
+    systemPrompt: DOCUMENT_GUIDED_ASSIGNMENT_SYSTEM,
+    userPrompt: `Course Material Chapter: "${chapterTitle}"
+Key concepts / excerpt:
+"""
+${safeSnippet}
+"""
+
+Requirements:
+- Target Programming Language: ${language}
+- Difficulty Level: ${difficulty}
+- Number of distinct assignments/problems to generate: ${Math.min(Math.max(questionsCount, 1), 3)}
+- Number of test cases per assignment: ${Math.min(Math.max(testCasesCount, 2), 5)}
+
+Please output the structured assignments in valid JSON.`,
+    temperature: 0.6,
+    maxTokens: 2500,
+    jsonMode: true,
+  };
+}
+
+const REGENERATE_TESTCASES_SYSTEM = `You are a testing engineer generating automated test cases for programming problems.
+Create diverse test cases covering: basic cases, edge cases (boundaries, negative, empty), and performance cases.
+
+OUTPUT FORMAT (strict JSON):
+{
+  "testCases": [
+    {
+      "input": "string (stdin)",
+      "expectedOutput": "string (expected stdout)",
+      "scoreWeight": number,
+      "label": "string"
+    }
+  ]
+}`;
+
+export function buildRegenerateTestCasesPrompt(
+  problemTitle: string,
+  problemDescription: string,
+  language: string,
+  count: number = 3
+): PromptPayload {
+  return {
+    systemPrompt: REGENERATE_TESTCASES_SYSTEM,
+    userPrompt: `Generate ${Math.min(Math.max(count, 2), 6)} comprehensive test cases for this problem:
+Title: ${problemTitle}
+Language: ${language}
+Description:
+"""
+${(problemDescription || "").slice(0, 1500)}
+"""
+
+Ensure test case weights sum to 100.`,
+    temperature: 0.4,
+    maxTokens: 1500,
+    jsonMode: true,
+  };
+}
+
 // ==============================================================================
 // US-15: Chấm Clean Code (Chain-of-Thought + Few-Shot Learning)
 // Nhận source code → AI phân tích từng bước → trả về điểm + nhận xét

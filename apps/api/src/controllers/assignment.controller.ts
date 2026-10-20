@@ -10,6 +10,7 @@ export const createAssignment = async (req: Request, res: Response) => {
             description,
             language, // "Java", "Python", "C#"
             deadline,
+            status = "PUBLISHED", // "DRAFT" | "PUBLISHED"
             gradingCriteria,
             testCases = [], // Array: [{ inputData, expectedOutput, scoreWeight }]
         } = req.body;
@@ -28,6 +29,7 @@ export const createAssignment = async (req: Request, res: Response) => {
                 description,
                 language,
                 deadline: new Date(deadline),
+                status: status === "DRAFT" ? "DRAFT" : "PUBLISHED",
                 gradingCriteria: gradingCriteria ? JSON.stringify(gradingCriteria) : null,
                 testCases: {
                     create: testCases.map((tc: any) => ({
@@ -206,12 +208,13 @@ export const getAssignments = async (req: Request, res: Response) => {
                 whereClause.classId = raw;
             }
         } else if (user?.role === "STUDENT") {
-            // Lấy các bài tập thuộc các lớp sinh viên đang theo học
+            // Lấy các bài tập thuộc các lớp sinh viên đang theo học và ĐÃ ĐƯỢC XUẤT BẢN
             const enrollments = await prisma.classStudent.findMany({
                 where: { studentId: user.userId, status: "ACTIVE" },
                 select: { classId: true },
             });
             whereClause.classId = { in: enrollments.map((e) => e.classId) };
+            whereClause.status = "PUBLISHED";
         } else if (user?.role === "LECTURER") {
             const classes = await prisma.class.findMany({
                 where: { lecturerId: user.userId },
