@@ -1,7 +1,7 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 
-// Định nghĩa các bước chấm điểm theo SRS mục 6.7.3
+// Defines grading step types per SRS section 6.7.3
 export type GradingStep =
   | "QUEUED"
   | "BUILDING"
@@ -22,12 +22,12 @@ export interface GradingProgressPayload {
 let io: Server | null = null;
 
 /**
- * Khởi tạo WebSocket Server (Socket.io) gắn vào HTTP Server
+ * Initializes the WebSocket Server (Socket.io) attached to the HTTP Server
  */
 export function initSocketServer(httpServer: HttpServer): Server {
   io = new Server(httpServer, {
     cors: {
-      origin: "*", // Cho phép Frontend (Vite port 5173) kết nối
+      origin: "*", // Allow all frontend origins (e.g. Vite port 5173) to connect
       methods: ["GET", "POST"],
     },
   });
@@ -35,14 +35,14 @@ export function initSocketServer(httpServer: HttpServer): Server {
   io.on("connection", (socket: Socket) => {
     console.log(`[WebSocket] Client connected: ${socket.id}`);
 
-    // Client (sinh viên) tham gia vào phòng lắng nghe của bài nộp cụ thể
+    // Client (student) joins the listening room for a specific submission
     socket.on("join_submission", (submissionId: string) => {
       socket.join(`submission_${submissionId}`);
       console.log(`[WebSocket] Client ${socket.id} joined room: submission_${submissionId}`);
       socket.emit("joined", { submissionId, message: "Connected to submission stream" });
     });
 
-    // Rời phòng
+    // Leave room
     socket.on("leave_submission", (submissionId: string) => {
       socket.leave(`submission_${submissionId}`);
       console.log(`[WebSocket] Client ${socket.id} left room: submission_${submissionId}`);
@@ -57,7 +57,7 @@ export function initSocketServer(httpServer: HttpServer): Server {
 }
 
 /**
- * Hàm tiện ích để các module khác (Sandbox, Queue, AST) phát sự kiện tiến trình chấm bài tới Client
+ * Utility function for other modules (Sandbox, Queue, AST) to emit grading progress events to the client
  */
 export function emitGradingProgress(payload: GradingProgressPayload) {
   if (!io) {

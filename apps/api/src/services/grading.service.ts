@@ -18,20 +18,20 @@ interface TestCaseResult {
 
 export class GradingService {
     /**
-     * Chạy toàn bộ pipeline chấm điểm cho 1 submission:
+     * Runs the complete grading pipeline for a single submission:
      * 1. Queued
-     * 2. Building (giải nén, chuẩn hóa file Java, javac)
-     * 3. Running Tests (chạy test cases qua java CLI)
-     * 4. AST Analysis (phân tích đạo văn Winnowing)
-     * 5. AI Review (đánh giá chất lượng mã nguồn)
-     * 6. Complete (cập nhật DB và phát socket)
+     * 2. Building (unzip, normalize Java files, javac compile)
+     * 3. Running Tests (execute test cases via java CLI)
+     * 4. AST Analysis (Winnowing plagiarism detection)
+     * 5. AI Review (source code quality evaluation)
+     * 6. Complete (update DB and emit socket events)
      */
     public async gradeSubmission(submissionId: string, zipFilePath: string): Promise<void> {
         let tempDir = "";
         try {
-            console.log(`[GradingService] Bắt đầu chấm bài nộp ${submissionId}`);
+            console.log(`[GradingService] Starting grading for submission ${submissionId}`);
 
-            // Lấy thông tin bài nộp và đề bài kèm test cases
+            // Fetch submission details and assignment with test cases
             const submission = await prisma.submission.findUnique({
                 where: { id: submissionId },
                 include: {
@@ -42,19 +42,19 @@ export class GradingService {
             });
 
             if (!submission) {
-                console.error(`[GradingService] Không tìm thấy submission ${submissionId}`);
+                console.error(`[GradingService] Submission ${submissionId} not found`);
                 return;
             }
 
-            // Bước 1: QUEUED
+            // Step 1: QUEUED
             emitGradingProgress({
                 submissionId,
                 step: "QUEUED",
                 progressPercent: 10,
-                message: "Bài nộp đã được tiếp nhận vào hàng đợi chấm.",
+                message: "Submission received and queued for grading.",
             });
 
-            // Kiểm tra file ZIP trên đĩa
+            // Check ZIP file on disk
             let resolvedZipPath = zipFilePath;
             if (!path.isAbsolute(resolvedZipPath)) {
                 resolvedZipPath = path.resolve(process.cwd(), resolvedZipPath);
@@ -64,7 +64,7 @@ export class GradingService {
                 if (fs.existsSync(altPath)) {
                     resolvedZipPath = altPath;
                 } else {
-                    console.error(`[GradingService] Không tìm thấy file zip tại: ${resolvedZipPath}`);
+                    console.error(`[GradingService] ZIP file not found at: ${resolvedZipPath}`);
                     await prisma.submission.update({
                         where: { id: submissionId },
                         data: { status: "FAILED" },
@@ -73,25 +73,25 @@ export class GradingService {
                 }
             }
 
-            // Bước 2: BUILDING (Chuẩn bị và biên dịch)
+            // Step 2: BUILDING (Prepare and compile)
             emitGradingProgress({
                 submissionId,
                 step: "BUILDING",
                 progressPercent: 25,
-                message: "Đang giải nén và biên dịch mã nguồn Java...",
+                message: "Extracting and compiling Java source code...",
             });
 
             tempDir = path.join(process.cwd(), "uploads", "temp", `sub_${submissionId}_${Date.now()}`);
             fs.mkdirSync(tempDir, { recursive: true });
 
-            // Giải nén ZIP an toàn
+            // Safely extract ZIP archive
             const zip = new AdmZip(resolvedZipPath);
             zip.extractAllTo(tempDir, true);
 
-            // Tìm và chuẩn hóa các file .java
+            // Find and normalize .java files
             const javaFiles = fs.readdirSync(tempDir).filter((f) => f.toLowerCase().endsWith(".java"));
             if (javaFiles.length === 0) {
-                console.warn(`[GradingService] Không có file .java nào trong ${resolvedZipPath}`);
+                console.warn(`[GradingService] No .java files found in ${resolvedZipPath}`);
                 await prisma.submission.update({
                     where: { id: submissionId },
                     data: {
@@ -103,7 +103,7 @@ export class GradingService {
                     submissionId,
                     step: "COMPLETE",
                     progressPercent: 100,
-                    message: "Lỗi biên dịch: Không tìm thấy file nguồn .java trong file nén.",
+                    message: "Compilation error: No .java source files found in the uploaded archive.",
                 });
                 await astService.check(submissionId, resolvedZipPath).catch(() => { });
                 this.cleanupTempDir(tempDir);
@@ -115,14 +115,14 @@ export class GradingService {
                 const filePath = path.join(tempDir, file);
                 const content = fs.readFileSync(filePath, "utf-8");
 
-                // Nếu có public class mà tên file không khớp -> đổi tên file để javac không báo lỗi
+                // If file has a public class whose name doesn't match filename -> rename file to avoid javac error
                 const publicClassMatch = content.match(/public\s+class\s+([A-Za-z0-9_]+)/);
                 if (publicClassMatch) {
                     const className = publicClassMatch[1];
                     if (file !== `${className}.java`) {
                         const newFilePath = path.join(tempDir, `${className}.java`);
                         fs.renameSync(filePath, newFilePath);
-                        console.log(`[GradingService] Đổi tên file ${file} -> ${className}.java`);
+                        console.log(`[GradingService] Renamed file ${file} -> ${className}.java`);
                     }
                     if (content.includes("public static void main")) {
                         mainClassName = className;
@@ -132,7 +132,7 @@ export class GradingService {
                 }
             }
 
-            // Nếu chưa tìm thấy mainClassName, chọn class đầu tiên
+            // If mainClassName still not found, pick the first class
             if (!mainClassName) {
                 const currentFiles = fs.readdirSync(tempDir).filter((f) => f.toLowerCase().endsWith(".java"));
                 if (currentFiles.length > 0) {
@@ -143,7 +143,7 @@ export class GradingService {
             // Biên dịch bằng javac
             const compileSuccess = await this.compileJavaFiles(tempDir);
             if (!compileSuccess.success) {
-                console.warn(`[GradingService] Lỗi biên dịch: ${compileSuccess.error}`);
+                console.warn(`[GradingService] Compilation error: ${compileSuccess.error}`);
                 await prisma.submission.update({
                     where: { id: submissionId },
                     data: {
@@ -155,19 +155,19 @@ export class GradingService {
                     submissionId,
                     step: "COMPLETE",
                     progressPercent: 100,
-                    message: `Lỗi biên dịch: ${compileSuccess.error?.slice(0, 200)}`,
+                    message: `Compilation error: ${compileSuccess.error?.slice(0, 200)}`,
                 });
                 await astService.check(submissionId, resolvedZipPath).catch(() => { });
                 this.cleanupTempDir(tempDir);
                 return;
             }
 
-            // Bước 3: RUNNING_TESTS (Chạy Test Cases)
+            // Step 3: RUNNING_TESTS (Execute Test Cases)
             emitGradingProgress({
                 submissionId,
                 step: "RUNNING_TESTS",
                 progressPercent: 50,
-                message: "Đang thực thi các test cases kiểm thử...",
+                message: "Running test cases against the submitted solution...",
             });
 
             await prisma.submission.update({
@@ -210,32 +210,32 @@ export class GradingService {
             }
 
             // Score is based only on configured test cases; zero test cases means zero, not 10/10.
-            const calculatedScore = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 10 * 10) / 10 : 0; // Thang 10 thay vì 100
+            const calculatedScore = totalWeight > 0 ? Math.round((passedWeight / totalWeight) * 10 * 10) / 10 : 0; // Scale 0-10
 
-            console.log(`[GradingService] Kết quả test cases: ${passedCount}/${testCases.length} đạt. Điểm: ${calculatedScore}/100`);
+            console.log(`[GradingService] Test results: ${passedCount}/${testCases.length} passed. Score: ${calculatedScore}/10`);
 
-            // Bước 4: AST ANALYSIS (Kiểm tra đạo văn Winnowing)
+            // Step 4: AST ANALYSIS (Winnowing plagiarism check)
             emitGradingProgress({
                 submissionId,
                 step: "AST_ANALYSIS",
                 progressPercent: 75,
-                message: "Đang phân tích cấu trúc cây cú pháp AST...",
+                message: "Analyzing AST structure for plagiarism detection...",
             });
 
             await astService.check(submissionId, resolvedZipPath);
 
-            // Bước 5: AI REVIEW (Đánh giá Clean Code)
+            // Step 5: AI REVIEW (Clean Code Evaluation)
             emitGradingProgress({
                 submissionId,
                 step: "AI_REVIEW",
                 progressPercent: 90,
-                message: "Đang tổng hợp đánh giá chất lượng mã nguồn...",
+                message: "Generating AI feedback on source code quality...",
             });
 
             let aiFeedbackText = this.generateCleanCodeFeedback(calculatedScore, passedCount, testCases.length);
 
-            // Bước 6: COMPLETE (Cập nhật kết quả cuối cùng)
-            // Kiểm tra xem bài nộp có bị tạm giữ điểm do DANGER đạo văn không
+            // Step 6: COMPLETE (Finalize results)
+            // Check if the submission's score was withheld due to DANGER-level plagiarism
             const currentSub = await prisma.submission.findUnique({
                 where: { id: submissionId },
                 select: { status: true },
@@ -259,13 +259,13 @@ export class GradingService {
                 progressPercent: 100,
                 message:
                     finalStatus === "SCORE_WITHHELD"
-                        ? "Phát hiện tương đồng cao — Điểm tạm giữ để Giảng viên đối chiếu."
-                        : `Hoàn tất chấm điểm tự động. Điểm: ${(calculatedScore / 10).toFixed(1)}/10 (${calculatedScore} điểm).`,
+                        ? "High similarity detected — Score withheld pending lecturer review."
+                        : `Grading complete. Score: ${(calculatedScore / 10).toFixed(1)}/10 (${calculatedScore} pts).`,
             });
 
-            console.log(`[GradingService] Hoàn tất chấm điểm bài nộp ${submissionId} (status: ${finalStatus}, score: ${calculatedScore})`);
+            console.log(`[GradingService] Grading finished for submission ${submissionId} (status: ${finalStatus}, score: ${calculatedScore})`);
         } catch (error: any) {
-            console.error(`[GradingService] Lỗi không mong muốn khi chấm bài ${submissionId}:`, error);
+            console.error(`[GradingService] Unexpected error while grading submission ${submissionId}:`, error);
             await prisma.submission
                 .update({
                     where: { id: submissionId },
@@ -280,16 +280,16 @@ export class GradingService {
     }
 
     /**
-     * Biên dịch các file Java trong thư mục
+     * Compiles all Java files in the given directory
      */
     private compileJavaFiles(dir: string): Promise<{ success: boolean; error?: string }> {
         return new Promise((resolve) => {
-            // Thử biên dịch chuẩn javac -encoding UTF-8
+            // Try standard compilation: javac -encoding UTF-8
             exec('javac -encoding UTF-8 *.java', { cwd: dir, timeout: 15000 }, (err, _stdout, stderr) => {
                 if (!err) {
                     return resolve({ success: true });
                 }
-                // Nếu JDK mới hơn có cờ --release, thử lại với --release 8 để tương thích tối đa runtime
+                // If newer JDK supports --release flag, retry with --release 8 for maximum runtime compatibility
                 exec('javac --release 8 -encoding UTF-8 *.java', { cwd: dir, timeout: 15000 }, (rErr, _rStdout, rStderr) => {
                     if (!rErr) {
                         return resolve({ success: true });
@@ -301,7 +301,7 @@ export class GradingService {
     }
 
     /**
-     * Chạy 1 test case với timeout 5 giây
+     * Runs a single test case with a 5-second timeout
      */
     private executeTestCase(
         dir: string,
@@ -348,7 +348,7 @@ export class GradingService {
                 clearTimeout(timeoutTimer);
                 const durationMs = Date.now() - startTime;
 
-                // Chuẩn hóa xuống dòng (CRLF -> LF) và khoảng trắng cuối mỗi dòng
+                // Normalize line endings (CRLF -> LF) and trailing whitespace per line
                 const normalize = (s: string) =>
                     s
                         .replace(/\r\n/g, "\n")
@@ -361,10 +361,10 @@ export class GradingService {
                 const actual = normalize(stdout);
                 const expected = normalize(expectedOutput);
 
-                // 1. So sánh chính xác sau khi chuẩn hóa dòng
+                // 1. Exact match after normalization
                 let passed = !killed && child.exitCode === 0 && actual === expected;
 
-                // 2. So sánh theo chuỗi token (nếu các từ/số giống hệt nhau nhưng khác biệt về dấu cách/xuống dòng)
+                // 2. Token-level comparison (if words/numbers are identical but spacing/newlines differ)
                 if (!passed && !killed && child.exitCode === 0 && expected.length > 0) {
                     const actualTokens = actual.split(/\s+/).filter(Boolean);
                     const expectedTokens = expected.split(/\s+/).filter(Boolean);
@@ -409,7 +409,7 @@ export class GradingService {
     }
 
     /**
-     * Tạo nhận xét Clean Code và chất lượng mã nguồn
+     * Generates clean code feedback and source code quality notes
      */
     private generateCleanCodeFeedback(score: number, passedTc: number, totalTc: number): string {
         const feedbackLines: string[] = [];
@@ -432,7 +432,7 @@ export class GradingService {
     }
 
     /**
-     * Thu don thu muc tam thoi
+     * Cleans up the temporary working directory
      */
     private cleanupTempDir(dir: string): void {
         try {

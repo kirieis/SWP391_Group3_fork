@@ -8,10 +8,10 @@ import { env } from "../config/env.js";
 import { astService } from "../services/ast.service.js";
 import { gradingService } from "../services/grading.service.js";
 
-// Giới hạn số lần nộp tối đa theo Risk R01 (mặc định 5 lần)
+// Maximum number of allowed submission attempts per student per assignment (Risk R01)
 const MAX_SUBMISSION_ATTEMPTS = 25;
 
-// 1. Nộp bài tập (US12 & Risk R01)
+// 1. Submit assignment (US12 & Risk R01)
 export const submitAssignment = async (req: Request, res: Response) => {
     try {
         const studentId = req.user?.userId;
@@ -26,7 +26,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
             return res.status(400).json({ success: false, message: "Please select an assignment and attach your submission (.zip) file." });
         }
 
-        // 1. Kiểm tra tồn tại Assignment & Deadline
+        // 1. Verify assignment exists & check deadline
         const assignment = await prisma.assignment.findUnique({
             where: { id: assignmentId },
         });
@@ -46,7 +46,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
             });
         }
 
-        // 2. Kiểm tra Risk R01: Số lần nộp bài của sinh viên cho assignment này
+        // 2. Enforce Risk R01: Count student's prior submissions for this assignment
         const submissionCount = await prisma.submission.count({
             where: {
                 assignmentId,
@@ -60,19 +60,19 @@ export const submitAssignment = async (req: Request, res: Response) => {
                 message: `You have reached the maximum limit of ${MAX_SUBMISSION_ATTEMPTS} submissions for this assignment (Risk R01).`,
             });
         }
-        // 3. Tính SHA-256 từ file trên đĩa
+        // 3. Compute SHA-256 hash of the uploaded file
         const fileBuffer = fs.readFileSync(file.path);
         const hashSum = crypto.createHash("sha256");
         hashSum.update(fileBuffer);
         const fileHash = hashSum.digest("hex");
 
-        // 4. Kiểm tra Magic bytes của file ZIP (50 4B 03 04)
+        // 4. Validate ZIP magic bytes (50 4B 03 04)
         if (fileBuffer.length < 4 || fileBuffer[0] !== 0x50 || fileBuffer[1] !== 0x4b || fileBuffer[2] !== 0x03 || fileBuffer[3] !== 0x04) {
-            fs.unlinkSync(file.path); // Xóa file rác
+            fs.unlinkSync(file.path); // Remove invalid file
             return res.status(400).json({ success: false, message: "Uploaded file is not a valid ZIP archive (Invalid magic bytes)." });
         }
 
-        // 6. Tạo submission với đường dẫn file đã lưu & AST_CHECK_STATUS = PENDING
+        // 6. Create submission record with file path & AST_CHECK_STATUS = PENDING
         const submission = await prisma.submission.create({
             data: {
                 assignmentId,
@@ -80,11 +80,11 @@ export const submitAssignment = async (req: Request, res: Response) => {
                 fileUrl: `/uploads/submissions/${file.filename}`,
                 fileHash,
                 status: "PENDING",
-                astCheckStatus: "PENDING", // ADR-001 §5: trạng thái kiểm tra đạo văn
+                astCheckStatus: "PENDING", // ADR-001 §5: plagiarism check status
             },
         });
 
-        // Phát thông báo tiến trình khởi tạo qua WebSocket
+        // Emit initial progress notification via WebSocket
         emitGradingProgress({
             submissionId: submission.id,
             step: "QUEUED",
@@ -92,8 +92,8 @@ export const submitAssignment = async (req: Request, res: Response) => {
             message: "Submission received and enqueued for grading.",
         });
 
-        // 7. Chạy toàn bộ pipeline chấm điểm tự động trong nền (Sandbox -> AST -> AI Review -> Hoàn tất điểm)
-        // Dùng setImmediate để trả về 202 Accepted ngay cho client theo US12
+        // 7. Run the full grading pipeline in the background (Sandbox -> AST -> AI Review -> Score finalization)
+        // Use setImmediate to immediately return 202 Accepted to client per US12
         setImmediate(async () => {
             try {
                 await gradingService.gradeSubmission(submission.id, file.path);
@@ -102,7 +102,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
             }
         });
 
-        // Trả về mã 202 Accepted theo đúng đặc tả US12 — NGAY LẬP TỨC
+        // Return 202 Accepted immediately per US12 specification
         return res.status(202).json({
             success: true,
             message: "Submission successful! Automatic grading in progress.",
@@ -113,12 +113,12 @@ export const submitAssignment = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        console.error("Lỗi submitAssignment:", error);
+        console.error("[submitAssignment] Error:", error);
         return res.status(500).json({ success: false, message: "Server error during submission." });
     }
 };
 
-// 2. Xem lịch sử nộp bài của sinh viên theo Assignment
+// 2. Get student's submission history for an assignment
 export const getMySubmissions = async (req: Request, res: Response) => {
     try {
         const studentId = req.user?.userId;
@@ -137,18 +137,18 @@ export const getMySubmissions = async (req: Request, res: Response) => {
 
         return res.json({ success: true, data: submissions });
     } catch (error) {
-        console.error("Lỗi getMySubmissions:", error);
+        console.error("[getMySubmissions] Error:", error);
         return res.status(500).json({ success: false, message: "Server error retrieving submission history." });
     }
 };
 
-// 3. Xem chi tiết bài nộp & kết quả chấm (Dùng cho Wireframe 6.7.3)
+// 3. View submission details & grading result (Wireframe 6.7.3)
 export const getSubmissionResult = async (req: Request, res: Response) => {
     try {
         const { submissionId } = req.params;
         const requestingUser = req.user;
 
-        // Kiểm tra IDOR: sinh viên chỉ xem bài của chính mình
+        // IDOR check: students may only view their own submissions
         const ownerCheck = await prisma.submission.findUnique({
             where: { id: submissionId },
             select: { studentId: true },
@@ -179,17 +179,17 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
         }
 
         /**
-         * ADR-001 §8 — Bảo vệ quyền riêng tư:
-         * - STUDENT: chỉ thấy mức độ (level), % tương đồng, KHÔNG thấy:
-         *     + matched_fragments (số dòng code của bài đối chiếu)
-         *     + submission_1_id / submission_2_id (danh tính bài kia)
-         * - LECTURER / ADMIN: thấy đầy đủ
+         * ADR-001 §8 — Privacy protection:
+         * - STUDENT: sees only similarity level & %, NOT:
+         *     + matched_fragments (code lines from compared submission)
+         *     + submission_1_id / submission_2_id (identities of other submissions)
+         * - LECTURER / ADMIN: sees full data
          */
         const sanitizePlagiarismForStudent = (matches: any[]) =>
             matches.map(({ similarityPercent, id }) => ({
                 id,
                 similarityPercent,
-                // Ẩn: submission1Id, submission2Id, matchedFragments
+                // Hidden: submission1Id, submission2Id, matchedFragments
             }));
 
         const isStudent = requestingUser?.role === "STUDENT";
@@ -217,12 +217,12 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
 
         return res.json({ success: true, data: responseData });
     } catch (error) {
-        console.error("Lỗi getSubmissionResult:", error);
+        console.error("[getSubmissionResult] Error:", error);
         return res.status(500).json({ success: false, message: "Server error retrieving submission result." });
     }
 };
 
-// 4. Sinh viên gửi đơn Khiếu nại điểm số (US05)
+// 4. Student submits a score appeal (US05)
 export const createAppeal = async (req: Request, res: Response) => {
     try {
         const studentId = req.user?.userId;
@@ -255,12 +255,12 @@ export const createAppeal = async (req: Request, res: Response) => {
             data: appeal,
         });
     } catch (error) {
-        console.error("Lỗi createAppeal:", error);
+        console.error("[createAppeal] Error:", error);
         return res.status(500).json({ success: false, message: "Server error submitting appeal." });
     }
 };
 
-// 5. Giảng viên giải quyết khiếu nại & Bắt buộc lưu Audit Log nếu sửa điểm (Risk R03 & US10)
+// 5. Lecturer resolves appeal & must record Audit Log if score is changed (Risk R03 & US10)
 export const resolveAppeal = async (req: Request, res: Response) => {
     try {
         const lecturerId = req.user?.userId;
@@ -280,9 +280,9 @@ export const resolveAppeal = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: "Appeal not found." });
         }
 
-        // Xử lý bằng Transaction để đảm bảo tính toàn vẹn (Risk R03)
+        // Use transaction to ensure data integrity (Risk R03)
         await prisma.$transaction(async (tx) => {
-            // 1. Cập nhật trạng thái Appeal
+            // 1. Update appeal status
             await tx.appeal.update({
                 where: { id: appealId },
                 data: {
@@ -293,7 +293,7 @@ export const resolveAppeal = async (req: Request, res: Response) => {
                 },
             });
 
-            // 2. Nếu có thay đổi điểm số -> Cập nhật Submission và ghi SCORE_AUDIT_LOGS
+            // 2. If score changed -> Update submission and record SCORE_AUDIT_LOGS
             if (newScore !== undefined && newScore !== null) {
                 const oldScore = appeal.submission.totalScore;
 
@@ -302,7 +302,7 @@ export const resolveAppeal = async (req: Request, res: Response) => {
                     data: { totalScore: Number(newScore) },
                 });
 
-                // Bắt buộc ghi log sửa điểm theo Risk R03
+                // Mandatory score change audit log per Risk R03
                 await tx.scoreAuditLog.create({
                     data: {
                         submissionId: appeal.submissionId,
@@ -320,12 +320,12 @@ export const resolveAppeal = async (req: Request, res: Response) => {
             message: "Appeal resolved successfully!",
         });
     } catch (error) {
-        console.error("Lỗi resolveAppeal:", error);
+        console.error("[resolveAppeal] Error:", error);
         return res.status(500).json({ success: false, message: "Server error resolving appeal." });
     }
 };
 
-// Lấy danh sách các đơn khiếu nại chờ duyệt (Lecturer)
+// Get list of pending appeals (Lecturer view)
 export const getPendingAppeals = async (req: Request, res: Response) => {
     try {
         const user = req.user!;
@@ -358,13 +358,13 @@ export const getPendingAppeals = async (req: Request, res: Response) => {
 
         return res.json({ success: true, data: appeals });
     } catch (error) {
-        console.error("Lỗi getPendingAppeals:", error);
+        console.error("[getPendingAppeals] Error:", error);
         return res.status(500).json({ success: false, message: "Server error retrieving pending appeals." });
     }
 };
 
 
-// API Endpoint cho Phân hệ 2 (Sandbox), 4 (AST), 5 (Queue) cập nhật kết quả chấm
+// API Endpoint for Subsystem 2 (Sandbox), 4 (AST), 5 (Queue) to update grading results
 export const updateSubmissionGradingResult = async (req: Request, res: Response) => {
     try {
         const internalKey = req.headers["x-internal-key"];
@@ -375,19 +375,19 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
         const { submissionId } = req.params;
         const { status, totalScore, aiFeedback, step, progressPercent, message } = req.body;
 
-        // 1. Validate trạng thái hợp lệ
-        // Bao gồm AI_REVIEW_PENDING (Milestone 3) và COMPLETED (mapped từ GRADED)
+        // 1. Validate status value
+        // Includes AI_REVIEW_PENDING (Milestone 3) and COMPLETED (mapped from GRADED)
         const ALLOWED_STATUS = [
             "PENDING", "QUEUED", "RUNNING_TESTS",
-            "GRADED", "AI_REVIEW_PENDING",            // Từ queue-worker
+            "GRADED", "AI_REVIEW_PENDING",            // From queue-worker
             "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION",
-            "COMPLETED",                              // Trạng thái hoàn tất trong DB
+            "COMPLETED",                              // Final status in DB
         ];
         if (status && !ALLOWED_STATUS.includes(status)) {
             return res.status(400).json({ success: false, message: "Invalid grading status." });
         }
 
-        // 2. Validate điểm số (Thống nhất chuẩn thang điểm 10)
+        // 2. Validate score (standardized 0-10 scale)
         if (totalScore !== undefined && totalScore !== null) {
             const scoreNum = Number(totalScore);
             if (!Number.isFinite(scoreNum) || scoreNum < 0 || scoreNum > 10) {
@@ -395,7 +395,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             }
         }
 
-        // 3. Kiểm tra bài nộp tồn tại
+        // 3. Verify submission exists
         const currentSubmission = await prisma.submission.findUnique({
             where: { id: submissionId },
             select: { id: true, status: true },
@@ -405,8 +405,8 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             return res.status(404).json({ success: false, message: "Submission not found." });
         }
 
-        // Map trạng thái từ queue-worker sang trạng thái DB chuẩn mà frontend hiểu
-        // GRADED / AI_REVIEW_PENDING → COMPLETED (pipeline chấm hoàn tất)
+        // Map queue-worker status to normalized DB status that frontend understands
+        // GRADED / AI_REVIEW_PENDING → COMPLETED (grading pipeline finished)
         const dbStatus = status === "GRADED" || status === "AI_REVIEW_PENDING"
             ? "COMPLETED"
             : status;
@@ -420,7 +420,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             },
         });
 
-        // Phát WebSocket real-time cho sinh viên đang xem Stepper
+        // Emit real-time WebSocket update to students viewing the grading stepper
         if (step) {
             emitGradingProgress({
                 submissionId,
@@ -432,7 +432,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
 
         return res.json({ success: true, message: "Grading result updated successfully!", data: updated });
     } catch (error) {
-        console.error("Lỗi updateSubmissionGradingResult:", error);
+        console.error("[updateSubmissionGradingResult] Error:", error);
         return res.status(500).json({ success: false, message: "Server error updating submission result." });
     }
 };

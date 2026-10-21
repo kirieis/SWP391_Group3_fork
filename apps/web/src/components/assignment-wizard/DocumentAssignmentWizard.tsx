@@ -13,6 +13,8 @@ import {
   Layers,
   Clock,
   BookOpen,
+  FileText,
+  Presentation,
 } from 'lucide-react';
 import { apiRequest } from '../../services/api';
 
@@ -62,7 +64,7 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
   const [file, setFile] = useState<File | null>(null);
   const [customSnippet, setCustomSnippet] = useState('');
   const [sections, setSections] = useState<DocumentSection[]>([]);
-  const [selectedSectionId, setSelectedSectionId] = useState<string>('');
+  const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [parsingDoc, setParsingDoc] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
 
@@ -85,6 +87,23 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
   const [publishing, setPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<'DRAFT' | 'PUBLISHED'>('PUBLISHED');
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<'pdf' | 'txt' | 'docx' | 'pptx'>('pdf');
+
+  // Toggle single section selection
+  const handleToggleSection = (id: string) => {
+    setSelectedSectionIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Select all sections
+  const handleSelectAllSections = () => {
+    if (selectedSectionIds.length === sections.length) {
+      setSelectedSectionIds([]);
+    } else {
+      setSelectedSectionIds(sections.map((s) => s.id));
+    }
+  };
 
   // Upload and parse document (Step 1)
   const handleUploadAndParse = async (selectedFile: File) => {
@@ -106,6 +125,7 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
 
       const res = await apiRequest<{
         fileName: string;
+        fileType?: 'pdf' | 'txt' | 'docx' | 'pptx';
         sections: DocumentSection[];
       }>('/assignments/parse-document', {
         method: 'POST',
@@ -114,7 +134,9 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
 
       if (res.success && res.data?.sections?.length) {
         setSections(res.data.sections);
-        setSelectedSectionId(res.data.sections[0].id);
+        if (res.data.fileType) setFileType(res.data.fileType);
+        // Default select the first section
+        setSelectedSectionIds([res.data.sections[0].id]);
       } else {
         setDocError(res.message || 'Could not parse document structure. You can paste the content manually.');
       }
@@ -127,8 +149,8 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
 
   // Step 1 -> Step 2
   const handleProceedToConfig = () => {
-    if (!selectedSectionId && !customSnippet.trim()) {
-      setDocError('Please select a chapter or paste material snippet below.');
+    if (selectedSectionIds.length === 0 && !customSnippet.trim()) {
+      setDocError('Please select at least one chapter/slide or paste material snippet below.');
       return;
     }
     setDocError(null);
@@ -137,9 +159,13 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
 
   // Step 2 -> Step 3: Generate assignments from chapter material
   const handleGenerateAssignments = async () => {
-    const selectedSec = sections.find((s) => s.id === selectedSectionId);
-    const chapterTitle = selectedSec ? selectedSec.title : 'Custom Syllabus Topic';
-    const chapterContext = selectedSec ? selectedSec.content : customSnippet;
+    const chosenSections = sections.filter((s) => selectedSectionIds.includes(s.id));
+    const chapterTitle = chosenSections.length > 0
+      ? chosenSections.map((s) => s.title).join(' + ')
+      : 'Custom Syllabus Topic';
+    const chapterContext = chosenSections.length > 0
+      ? chosenSections.map((s) => `### ${s.title}\n${s.content}`).join('\n\n')
+      : customSnippet;
 
     setGenerating(true);
     setGenError(null);
@@ -280,6 +306,32 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
       return;
     }
 
+    // Check existing titles before publishing an AI-generated document draft.
+    const existingRes = await apiRequest<Array<{ title: string }>>('/assignments');
+    const normalizeTitle = (value: string) => value.toLocaleLowerCase().trim().replace(/\s+/g, ' ');
+    const similarity = (left: string, right: string) => {
+      const a = normalizeTitle(left); const b = normalizeTitle(right);
+      if (a === b) return 1;
+      if (!a || !b) return 0;
+      let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
+      for (let i = 1; i <= a.length; i += 1) {
+        const current = [i];
+        for (let j = 1; j <= b.length; j += 1) current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        previous = current;
+      }
+      return 1 - previous[b.length] / Math.max(a.length, b.length);
+    };
+    const similarTitles = (existingRes.success && Array.isArray(existingRes.data) ? existingRes.data : [])
+      .map((item) => ({ title: item.title, score: similarity(currentDraft.title, item.title) }))
+      .filter((item) => item.score > 0.85);
+    if (similarTitles.length) {
+      const matches = similarTitles.slice(0, 5).map((item) => `• ${item.title} (${Math.round(item.score * 100)}%)`).join('\n');
+      if (!window.confirm(`This AI draft title may be confusing or duplicated because it is more than 85% similar to an existing title:\n\n${matches}\n\nSave this assignment anyway?\nChoose Cancel to edit the draft.`)) {
+        setPublishing(false);
+        return;
+      }
+    }
+
     const res = await apiRequest<{ id: string }>('/assignments', {
       method: 'POST',
       body: JSON.stringify({
@@ -352,17 +404,19 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
           <div className="space-y-5 max-w-2xl mx-auto">
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
-                1. Upload course slides or syllabus (PDF or TXT, max 30MB):
+                1. Upload course materials, slides or syllabus (PDF, DOCX, PPTX, TXT, max 30MB):
               </label>
               <label className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/30 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition">
                 <UploadCloud size={32} className="text-indigo-500 mb-2" />
                 <span className="text-xs font-semibold text-indigo-700">
                   {file ? file.name : 'Click to select or drag and drop document here'}
                 </span>
-                <span className="text-[11px] text-slate-400 mt-1">Automatic chapter &amp; section parsing</span>
+                <span className="text-[11px] text-slate-400 mt-1">
+                  Supports PDF documents, Word (.docx), PowerPoint (.pptx), and plain text (.txt)
+                </span>
                 <input
                   type="file"
-                  accept=".pdf,.txt"
+                  accept=".pdf,.txt,.docx,.pptx,.doc,.ppt"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -375,37 +429,75 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
             {parsingDoc && (
               <div className="py-4 text-center text-xs text-indigo-600 flex items-center justify-center gap-2">
                 <Loader2 size={16} className="animate-spin" />
-                <span>Parsing document sections and chapters...</span>
+                <span>Extracting chapters, slides and syllabus contents...</span>
               </div>
             )}
 
             {/* Extracted sections */}
             {sections.length > 0 && (
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-2">
-                  Select chapter / topic to generate assignment from:
-                </label>
-                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                  {sections.map((sec) => (
-                    <label
-                      key={sec.id}
-                      onClick={() => setSelectedSectionId(sec.id)}
-                      className={`block p-3 rounded-xl border text-xs cursor-pointer transition ${
-                        selectedSectionId === sec.id
-                          ? 'bg-indigo-50 border-indigo-500 shadow-sm'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-semibold text-slate-900 mb-1">
-                        <span className="flex items-center gap-1.5">
-                          <BookOpen size={14} className="text-indigo-600" />
-                          {sec.title}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-normal">~{sec.charCount} characters</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 line-clamp-2">{sec.summary}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-bold text-slate-700">
+                      Select chapter(s) / slide(s) to generate assignment from:
                     </label>
-                  ))}
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold">
+                      {selectedSectionIds.length}/{sections.length} selected
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllSections}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold transition"
+                    >
+                      {selectedSectionIds.length === sections.length ? 'Deselect all' : 'Select all'}
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold uppercase">
+                      {fileType} · {sections.length} sections
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {sections.map((sec) => {
+                    const isSelected = selectedSectionIds.includes(sec.id);
+                    return (
+                      <div
+                        key={sec.id}
+                        onClick={() => handleToggleSection(sec.id)}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition flex items-start gap-2.5 ${
+                          isSelected
+                            ? 'bg-indigo-50/70 border-indigo-400 shadow-sm ring-1 ring-indigo-400/30'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSection(sec.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between font-semibold text-slate-900 mb-1">
+                            <span className="flex items-center gap-1.5 truncate">
+                              {fileType === 'pptx' ? (
+                                <Presentation size={14} className="text-amber-600 shrink-0" />
+                              ) : fileType === 'docx' ? (
+                                <FileText size={14} className="text-blue-600 shrink-0" />
+                              ) : (
+                                <BookOpen size={14} className="text-indigo-600 shrink-0" />
+                              )}
+                              <span className="truncate">{sec.title}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-normal shrink-0 ml-2">~{sec.charCount} characters</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 line-clamp-2">{sec.summary}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -421,7 +513,7 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
                 value={customSnippet}
                 onChange={(e) => {
                   setCustomSnippet(e.target.value);
-                  if (e.target.value.trim()) setSelectedSectionId('');
+                  if (e.target.value.trim()) setSelectedSectionIds([]);
                 }}
                 className="w-full text-xs p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500"
               />
@@ -442,9 +534,14 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
             <div className="bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100 text-xs text-indigo-900 flex items-start gap-2">
               <BookOpen size={16} className="text-indigo-600 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold">Selected Section: </span>
-                <span>
-                  {sections.find((s) => s.id === selectedSectionId)?.title || 'Custom Syllabus Excerpt'}
+                <span className="font-bold">Selected Sections ({selectedSectionIds.length}): </span>
+                <span className="line-clamp-2">
+                  {selectedSectionIds.length > 0
+                    ? sections
+                        .filter((s) => selectedSectionIds.includes(s.id))
+                        .map((s) => s.title)
+                        .join(', ')
+                    : 'Custom Syllabus Excerpt'}
                 </span>
               </div>
             </div>
@@ -750,7 +847,7 @@ export const DocumentAssignmentWizard: React.FC<DocumentAssignmentWizardProps> =
           {currentStep === 1 && (
             <button
               type="button"
-              disabled={parsingDoc || (!selectedSectionId && !customSnippet.trim())}
+              disabled={parsingDoc || (selectedSectionIds.length === 0 && !customSnippet.trim())}
               onClick={handleProceedToConfig}
               className="text-xs px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-1.5 disabled:opacity-40"
             >
