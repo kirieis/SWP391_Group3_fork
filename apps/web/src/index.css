@@ -1,1 +1,70 @@
 @import "tailwindcss";
+
+/* -------------------------------------------------------------------------- */
+/* Định nghĩa Design Tokens theo Tailwind 4 (@theme)                          */
+/* Hướng thiết kế: "Calm academic-tech" - Tông màu sáng, tối giản, rõ ràng    */
+/* -------------------------------------------------------------------------- */
+@theme {
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+
+  /* Accent cam dùng DUY NHẤT cho logo FPT và điểm nhấn nhỏ */
+  --color-accent: #f97316;
+
+  /* Màu nền ứng dụng và bề mặt card */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-line: #e2e8f0;
+
+  /* Màu chữ đảm bảo độ tương phản chuẩn WCAG AA */
+  --color-ink: #0f172a;
+  --color-ink-2: #475569;
+  --color-ink-3: #64748b;
+
+  /* Màu trạng thái mang ngữ nghĩa rõ ràng */
+  --color-success-bg: #ecfdf5;
+  --color-success-text: #047857;
+  --color-success-border: #a7f3d0;
+
+  --color-warning-bg: #fffbeb;
+  --color-warning-text: #92400e;
+  --color-warning-border: #fde68a;
+
+  --color-danger-bg: #fff1f2;
+  --color-danger-text: #be123c;
+  --color-danger-border: #fecdd3;
+
+  --color-neutral-bg: #f1f5f9;
+  --color-neutral-text: #334155;
+  --color-neutral-border: #e2e8f0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cài đặt cơ sở cho toàn bộ trang web                                        */
+/* -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tôn trọng cài đặt giảm chuyển động của người dùng */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
