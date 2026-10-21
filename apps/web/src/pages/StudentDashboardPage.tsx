@@ -566,7 +566,7 @@ export default function StudentDashboardPage() {
                                 ? 'text-rose-600'
                                 : 'text-amber-600'
                             }`}>
-                            {assignment.score !== null && (assignment.score > 10 ? (assignment.score / 10).toFixed(1) : assignment.score)}
+                            {typeof assignment.score === 'number' && (assignment.score > 10 ? (assignment.score / 10).toFixed(1) : assignment.score)}
                           </span>
                         </div>
                       )}
