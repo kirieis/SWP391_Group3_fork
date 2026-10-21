@@ -158,6 +158,7 @@ export default function LecturerDashboardPage() {
   const [assignmentsError, setAssignmentsError] = useState<string>('');
   const [assignments, setAssignments] = useState<AssignmentItem[]>([]);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('');
+  const [expandedDescriptionId, setExpandedDescriptionId] = useState<string>('');
   const [assignmentDeadlineTab, setAssignmentDeadlineTab] = useState<'ACTIVE' | 'END' | 'DRAFT'>('ACTIVE');
 
   // Trạng thái Thống kê Analytics
@@ -922,11 +923,34 @@ export default function LecturerDashboardPage() {
                 </section>
               )}
               {assignments.find((item) => item.id === selectedAssignmentId)?.description && (
-                <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <h3 className="text-sm font-bold text-slate-900">Assignment description</h3>
-                  <p className="mt-2 text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
-                    {assignments.find((item) => item.id === selectedAssignmentId)?.description}
-                  </p>
+                <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold text-slate-900">Assignment description</h3>
+                    {expandedDescriptionId === selectedAssignmentId ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedDescriptionId('')}
+                        className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        aria-expanded="true"
+                      >
+                        Close
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedDescriptionId(selectedAssignmentId)}
+                        className="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                        aria-expanded="false"
+                      >
+                        Show description
+                      </button>
+                    )}
+                  </div>
+                  {expandedDescriptionId === selectedAssignmentId && (
+                    <p className="mt-3 text-sm text-slate-600 whitespace-pre-wrap leading-relaxed break-words">
+                      {assignments.find((item) => item.id === selectedAssignmentId)?.description}
+                    </p>
+                  )}
                 </section>
               )}
               {/* TRƯỜNG HỢP 1: Lỗi tải danh sách lớp */}
