@@ -128,7 +128,6 @@ model Assignment {
   description     String?      @db.NVarChar(Max)
   language        String       // "Java", "Python", "C#"
   deadline        DateTime
-  status          String       @default("PUBLISHED") // "DRAFT" | "PUBLISHED"
   gradingCriteria String?      @map("grading_criteria") @db.NVarChar(Max)
 
   class           Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
