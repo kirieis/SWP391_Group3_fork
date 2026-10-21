@@ -277,10 +277,15 @@ export default function StudentDashboardPage() {
         ...item,
         isExpired: Boolean(item.rawDeadline && now > new Date(item.rawDeadline).getTime()),
       })));
-      setSelectedAssignment((current) => current ? {
-        ...current,
-        isExpired: Boolean(current.rawDeadline && now > new Date(current.rawDeadline).getTime()),
-      } : current);
+      setSelectedAssignment((current) => {
+        if (!current) return current;
+        const isExpired = Boolean(current.rawDeadline && now > new Date(current.rawDeadline).getTime());
+        if (isExpired && !current.isExpired) {
+          setFileToUpload(null);
+          setUploadError('The submission deadline has passed. Submissions and resubmissions are no longer accepted.');
+        }
+        return { ...current, isExpired };
+      });
     }, 5000);
     return () => clearInterval(deadlineTimer);
   }, []);
@@ -627,49 +632,51 @@ export default function StudentDashboardPage() {
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">The submission deadline has passed. Submissions and resubmissions are no longer accepted.</div>
             )}
 
-            {/* File selection */}
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-5 sm:p-6 text-center cursor-pointer transition ${fileToUpload
-                  ? 'border-indigo-500 bg-indigo-50/50'
-                  : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'
-                }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".zip"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    setFileToUpload(e.target.files[0]);
-                    setUploadError('');
-                  }
-                }}
-              />
-              <div className="flex flex-col items-center gap-2">
-                <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl">
-                  {fileToUpload ? <FileArchive size={32} /> : <UploadCloud size={32} />}
+            {/* File selection is unavailable after the deadline. */}
+            {!selectedAssignment.isExpired && (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-2xl p-5 sm:p-6 text-center cursor-pointer transition ${fileToUpload
+                    ? 'border-indigo-500 bg-indigo-50/50'
+                    : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'
+                  }`}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".zip"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setFileToUpload(e.target.files[0]);
+                      setUploadError('');
+                    }
+                  }}
+                />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl">
+                    {fileToUpload ? <FileArchive size={32} /> : <UploadCloud size={32} />}
+                  </div>
+                  {fileToUpload ? (
+                    <div>
+                      <p className="text-xs font-bold text-indigo-900">{fileToUpload.name}</p>
+                      <p className="text-[11px] text-indigo-600 mt-0.5">
+                        {(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800">
+                        Click here to select your submission file <span className="text-indigo-600">.zip</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        ZIP files only • 10 MB max • Up to 5 submissions (Risk R01)
+                      </p>
+                    </div>
+                  )}
                 </div>
-                {fileToUpload ? (
-                  <div>
-                    <p className="text-xs font-bold text-indigo-900">{fileToUpload.name}</p>
-                    <p className="text-[11px] text-indigo-600 mt-0.5">
-                      {(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-800">
-                      Click here to select your submission file <span className="text-indigo-600">.zip</span>
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      ZIP files only • 10 MB max • Up to 5 submissions (Risk R01)
-                    </p>
-                  </div>
-                )}
               </div>
-            </div>
+            )}
 
             {/* Thông báo lỗi nếu có */}
             {uploadError && (
@@ -696,14 +703,16 @@ export default function StudentDashboardPage() {
               >
                 Cancel
               </button>
-              <button
-                disabled={submitting || !fileToUpload || selectedAssignment.isExpired}
-                onClick={handleSubmitAssignment}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
-                <span>{submitting ? 'Uploading...' : 'Confirm submission'}</span>
-              </button>
+              {!selectedAssignment.isExpired && (
+                <button
+                  disabled={submitting || !fileToUpload}
+                  onClick={handleSubmitAssignment}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {submitting ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+                  <span>{submitting ? 'Uploading...' : 'Confirm submission'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
