@@ -5,7 +5,6 @@ import {
   CheckCircle,
   Clock,
   Search,
-  LogOut,
   FileCode,
   ArrowRight,
   UploadCloud,
@@ -14,8 +13,12 @@ import {
   Loader2,
   X,
   RotateCw,
+  ChevronDown,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
+import { StudentHeader } from '../components/StudentHeader';
+import { StatCard } from '../components/ui/StatCard';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
 export interface AssignmentItem {
   id: string;
@@ -38,63 +41,40 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
   label: string;
   showScore: boolean;
   isChecking: boolean;
+  tone: 'success' | 'warning' | 'danger' | 'neutral';
 } {
   if (item.status === 'NOT_SUBMITTED' && item.isExpired) {
-    return {
-      badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-      label: 'N/A',
-      showScore: false,
-      isChecking: false,
-    };
+    return { badgeClass: '', label: 'N/A', showScore: false, isChecking: false, tone: 'neutral' };
   }
 
   if (item.status === 'NOT_SUBMITTED') {
-    return {
-      badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-      label: 'Not submitted',
-      showScore: false,
-      isChecking: false,
-    };
+    return { badgeClass: '', label: 'Not submitted', showScore: false, isChecking: false, tone: 'neutral' };
   }
 
   // Quy tắc ADR-001 & SRS: SCORE_WITHHELD tuyệt đối không hiển thị điểm số
   if (item.status === 'SCORE_WITHHELD') {
-    return {
-      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
-      label: 'Awaiting lecturer review',
-      showScore: false,
-      isChecking: false,
-    };
+    return { badgeClass: '', label: 'Awaiting lecturer review', showScore: false, isChecking: false, tone: 'warning' };
   }
 
   // Cần xem xét do lỗi cú pháp nhưng đã fallback phân tích Lexical
   if (item.astCheckStatus === 'NEEDS_REVIEW') {
     return {
-      badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
+      badgeClass: '',
       label: 'Review required (lexical analysis)',
       showScore: item.score !== undefined && item.score !== null,
       isChecking: false,
+      tone: 'warning',
     };
   }
 
   // Thất bại trong pipeline chấm hoặc AST
   if (item.status === 'FAILED' || item.astCheckStatus === 'FAILED') {
-    return {
-      badgeClass: 'bg-rose-50 text-rose-700 border border-rose-200',
-      label: 'Syntax check failed',
-      showScore: false,
-      isChecking: false,
-    };
+    return { badgeClass: '', label: 'Syntax check failed', showScore: false, isChecking: false, tone: 'danger' };
   }
 
   // Đang trong hàng đợi hoặc đang kiểm tra AST / Sandbox
   if (item.status === 'PENDING' || item.status === 'RUNNING' || item.astCheckStatus === 'PENDING') {
-    return {
-      badgeClass: 'bg-amber-50 text-amber-700 border border-amber-200',
-      label: 'Checking...',
-      showScore: false,
-      isChecking: true,
-    };
+    return { badgeClass: '', label: 'Checking...', showScore: false, isChecking: true, tone: 'warning' };
   }
 
   // Graded chính thức (phân loại màu sắc theo thang điểm)
@@ -102,26 +82,17 @@ function getAssignmentStatusInfo(item: AssignmentItem): {
     const numScore = Number(item.score);
     const isPassing = numScore >= 5.0;
     const isZero = numScore === 0;
-
     return {
-      badgeClass: isPassing
-        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-        : isZero
-          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-          : 'bg-amber-50 text-amber-700 border border-amber-200',
+      badgeClass: '',
       label: isPassing ? 'Graded' : isZero ? 'Failed (0 pts)' : 'Low score',
       showScore: true,
       isChecking: false,
+      tone: isPassing ? 'success' : isZero ? 'danger' : 'warning',
     };
   }
 
   // Trạng thái trung tính khác (đảm bảo không làm vỡ giao diện)
-  return {
-    badgeClass: 'bg-slate-100 text-slate-600 border border-slate-200',
-    label: item.status || 'Submitted',
-    showScore: false,
-    isChecking: false,
-  };
+  return { badgeClass: '', label: item.status || 'Submitted', showScore: false, isChecking: false, tone: 'neutral' };
 }
 
 interface RawAssignment {
@@ -137,6 +108,32 @@ interface RawAssignment {
     totalScore?: number | null;
     astCheckStatus?: string;
   }>;
+}
+
+// Thẻ mô tả assignment có thể thu gọn (clamp 2 dòng, Show more/less)
+function DescriptionBox({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-2 rounded-xl bg-neutral-bg border border-line p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-3 mb-1">
+        Description
+      </p>
+      <p className={`text-xs text-ink-2 whitespace-pre-wrap leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>
+        {text}
+      </p>
+      {text.length > 120 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700 transition-colors"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+          <ChevronDown size={13} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function StudentDashboardPage() {
@@ -353,232 +350,218 @@ export default function StudentDashboardPage() {
     return matchStatus && matchSearch;
   });
 
+  // Các tab lọc trạng thái
+  const filterTabs = [
+    { id: 'ALL', label: 'All', count: assignments.length },
+    { id: 'NOT_SUBMITTED', label: 'Not submitted', count: assignments.filter(a => a.status === 'NOT_SUBMITTED').length },
+    { id: 'PENDING', label: 'Checking', count: assignments.filter(a => getAssignmentStatusInfo(a).isChecking).length },
+    { id: 'GRADED', label: 'Graded', count: assignments.filter(a => getAssignmentStatusInfo(a).showScore).length },
+    { id: 'SCORE_WITHHELD', label: 'Awaiting review', count: assignments.filter(a => a.status === 'SCORE_WITHHELD').length },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
-      {/* Top Navbar */}
-      <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center font-bold text-white shadow-md shadow-orange-500/20">
-            A
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-slate-900">AITA-Intelligent</h1>
-            <p className="text-[11px] text-slate-500">Student Portal</p>
-          </div>
+    <div className="min-h-dvh bg-bg text-ink flex flex-col">
+      {/* Header chung chuẩn cho phân hệ sinh viên */}
+      <StudentHeader user={user} />
+
+      {/* Nội dung chính */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+        {/* ===== 3 StatCard thống kê ===== */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard
+            label="Total assignments"
+            value={assignments.length}
+            icon={BookOpen}
+            tone="brand"
+          />
+          <StatCard
+            label="Submitted"
+            value={`${assignments.filter((a) => a.status !== 'NOT_SUBMITTED').length} / ${assignments.length}`}
+            icon={CheckCircle}
+            tone="success"
+            caption="out of all assignments"
+          />
+          <StatCard
+            label="Grading status"
+            value={
+              isPolling ? (
+                <span className="flex items-center gap-2 text-2xl font-semibold">
+                  <RotateCw size={20} className="animate-spin text-warning-text" aria-hidden="true" />
+                  Updating...
+                </span>
+              ) : (
+                'Ready'
+              )
+            }
+            icon={Clock}
+            tone={isPolling ? 'warning' : 'neutral'}
+            caption={isPolling ? 'Checking for grading updates every 3s' : 'Ready for automatic grading'}
+          />
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-right hidden sm:block">
-            <p className="text-xs font-semibold text-slate-800">{user?.fullName || 'Student'}</p>
-            <p className="text-[11px] text-slate-500">{user?.email || '@fpt.edu.vn'}</p>
-          </div>
-          <div className="w-9 h-9 rounded-full bg-indigo-600 text-white font-semibold flex items-center justify-center text-xs shadow-sm">
-            {user?.fullName?.charAt(0) || 'SV'}
-          </div>
-          {/* Nút Sign out chuẩn */}
-          <button
-            onClick={() => {
-              localStorage.removeItem('aita_token');
-              localStorage.removeItem('aita_user');
-              navigate('/login', { replace: true });
-            }}
-            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition"
-            title="Sign out"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto p-6 space-y-6">
-        {/* Quick Stats Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-              <BookOpen size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500">Total assignments</p>
-              <p className="text-2xl font-bold text-slate-900">{assignments.length} assignments</p>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-              <CheckCircle size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500">Submitted</p>
-              <p className="text-2xl font-bold text-emerald-600">
-                {assignments.filter((a) => a.status !== 'NOT_SUBMITTED').length} / {assignments.length}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-            <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
-              <Clock size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-500">Grading status</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                {isPolling && <RotateCw size={12} className="animate-spin text-amber-600" />}
-                <p className="text-sm font-bold text-amber-600">
-                  {isPolling ? 'Updating progress...' : 'Ready for automatic grading'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Search & Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 justify-between items-center bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+        {/* ===== Thanh tìm kiếm + Filter chips ===== */}
+        <div className="bg-surface border border-line rounded-2xl shadow-sm p-3 sm:p-4 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+          {/* Ô tìm kiếm */}
+          <div className="relative min-w-0 sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-3 pointer-events-none" size={15} aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              id="assignment-search"
               placeholder="Search assignments or class codes..."
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white"
+              className="w-full bg-bg border border-line rounded-xl pl-9 pr-4 py-2 text-xs text-ink placeholder-ink-3 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-transparent transition"
             />
           </div>
 
-          <div className="flex gap-2 w-full sm:w-auto overflow-x-auto">
-            {[
-              { id: 'ALL', label: 'All' },
-              { id: 'NOT_SUBMITTED', label: 'Not submitted' },
-              { id: 'PENDING', label: 'Checking' },
-              { id: 'GRADED', label: 'Graded' },
-              { id: 'SCORE_WITHHELD', label: 'Awaiting review' },
-            ].map((st) => (
+          {/* Filter chips */}
+          <div className="flex gap-1.5 flex-wrap sm:flex-nowrap sm:overflow-x-auto">
+            {filterTabs.map((tab) => (
               <button
-                key={st.id}
-                onClick={() => setFilterStatus(st.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition whitespace-nowrap ${filterStatus === st.id
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                key={tab.id}
+                type="button"
+                onClick={() => setFilterStatus(tab.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  filterStatus === tab.id
+                    ? 'bg-brand-600 text-white shadow-sm'
+                    : 'bg-neutral-bg text-ink-2 hover:text-ink hover:bg-slate-100 border border-line'
+                }`}
               >
-                {st.label}
+                {tab.label}
+                {tab.count > 0 && (
+                  <span className={`px-1.5 py-px rounded-full text-[10px] font-bold ${
+                    filterStatus === tab.id ? 'bg-white/25 text-white' : 'bg-slate-200 text-ink-2'
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         </div>
 
-        {/* TRẠNG THÁI 1: Đang tải dữ liệu (Loading state) */}
+        {/* ===== TRẠNG THÁI 1: Đang tải dữ liệu ===== */}
         {loading && (
-          <div className="p-16 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <Loader2 size={24} className="animate-spin text-indigo-600" />
+          <div className="p-16 text-center text-ink-3 text-xs flex flex-col items-center justify-center gap-3 bg-surface rounded-2xl border border-line shadow-sm">
+            <Loader2 size={24} className="animate-spin text-brand-600" />
             <span>Loading assignments from the server...</span>
           </div>
         )}
 
-        {/* TRẠNG THÁI 2: Lỗi kết nối / Máy chủ (Error state với nút Try again) */}
+        {/* ===== TRẠNG THÁI 2: Lỗi kết nối / Máy chủ ===== */}
         {!loading && errorMessage && (
-          <div className="p-12 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-3">
-            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
+          <div className="p-12 text-center bg-surface rounded-2xl border border-danger-border shadow-sm flex flex-col items-center justify-center gap-4">
+            <div className="p-3 bg-danger-bg text-danger-text rounded-2xl">
               <AlertCircle size={28} />
             </div>
-            <h3 className="text-sm font-bold text-slate-900">Unable to load assignments</h3>
-            <p className="text-xs text-slate-500 max-w-md">{errorMessage}</p>
+            <div>
+              <h3 className="text-sm font-bold text-ink">Unable to load assignments</h3>
+              <p className="text-xs text-ink-3 max-w-md mt-1">{errorMessage}</p>
+            </div>
             <button
+              type="button"
               onClick={() => loadAssignments(true)}
-              className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-xl transition shadow-sm"
+              className="mt-1 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium rounded-xl transition shadow-sm"
             >
               Try again
             </button>
           </div>
         )}
 
-        {/* TRẠNG THÁI 3: Danh sách rỗng thật (Empty state) */}
+        {/* ===== TRẠNG THÁI 3: Danh sách rỗng thật ===== */}
         {!loading && !errorMessage && assignments.length === 0 && (
-          <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
-            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+          <div className="p-16 text-center bg-surface rounded-2xl border border-line shadow-sm flex flex-col items-center justify-center gap-4">
+            <div className="p-3 bg-brand-50 text-brand-600 rounded-2xl">
               <BookOpen size={28} />
             </div>
-            <h3 className="text-sm font-bold text-slate-900">No assignments yet</h3>
-            <p className="text-xs text-slate-500 max-w-sm">
-              You are not enrolled in any assignments yet, or your lecturer has not published an assignment for your class.
-            </p>
+            <div>
+              <h3 className="text-sm font-bold text-ink">No assignments yet</h3>
+              <p className="text-xs text-ink-3 max-w-sm mt-1">
+                You are not enrolled in any assignments yet, or your lecturer has not published an assignment for your class.
+              </p>
+            </div>
           </div>
         )}
 
-        {/* TRẠNG THÁI 4: Hiển thị danh sách assignments thật */}
+        {/* ===== TRẠNG THÁI 4: Danh sách assignments thật ===== */}
         {!loading && !errorMessage && assignments.length > 0 && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {filteredAssignments.length === 0 ? (
-              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400">
+              <div className="p-10 text-center bg-surface rounded-2xl border border-line text-xs text-ink-3">
                 No assignments match the current filters.
               </div>
             ) : (
               filteredAssignments.map((assignment) => {
                 const statusInfo = getAssignmentStatusInfo(assignment);
+                const displayScore =
+                  statusInfo.showScore && typeof assignment.score === 'number'
+                    ? assignment.score > 10
+                      ? (assignment.score / 10).toFixed(1)
+                      : assignment.score
+                    : null;
 
                 return (
-                  <div
+                  <article
                     key={assignment.id}
-                    className="bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-md transition rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 group shadow-sm"
+                    className="bg-surface border border-line hover:border-brand-300 hover:shadow-md transition-all duration-150 rounded-2xl p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 group shadow-sm"
                   >
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-mono text-[11px] font-semibold">
+                    {/* Thông tin assignment */}
+                    <div className="space-y-2 min-w-0 flex-1">
+                      {/* Chip class + ngôn ngữ */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-md bg-brand-50 text-brand-700 font-mono text-[11px] font-semibold border border-brand-100">
                           {assignment.classCode}
                         </span>
-                        <span className="flex items-center gap-1 text-[11px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                          <FileCode size={12} />
+                        <span className="flex items-center gap-1 text-[11px] text-ink-2 bg-neutral-bg px-2 py-0.5 rounded-md border border-line">
+                          <FileCode size={12} aria-hidden="true" />
                           {assignment.language}
                         </span>
                       </div>
-                      <h3 className="font-semibold text-slate-900 text-base group-hover:text-indigo-600 transition">
+
+                      <h3 className="font-semibold text-ink text-base leading-snug group-hover:text-brand-600 transition-colors">
                         {assignment.title}
                       </h3>
+
+                      {/* Mô tả có thể thu gọn */}
                       {assignment.description?.trim() && (
-                        <div className="mt-2 rounded-lg bg-slate-50 border border-slate-100 p-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1">Assignment description</p>
-                          <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">{assignment.description}</p>
-                        </div>
+                        <DescriptionBox text={assignment.description} />
                       )}
-                      <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                        <Clock size={14} className="text-slate-400" />
-                        Deadline: <span className="text-slate-700 font-medium">{assignment.deadline}</span>
+
+                      <p className="text-xs text-ink-3 flex items-center gap-1.5">
+                        <Clock size={13} className="text-ink-3 shrink-0" aria-hidden="true" />
+                        Deadline: <span className="text-ink-2 font-medium">{assignment.deadline}</span>
                       </p>
                     </div>
 
                     {/* Trạng thái & Thao tác */}
-                    <div className="flex items-center gap-4 self-end md:self-center">
-                      {/* Show N/A when the deadline passed without any submission. */}
-                      {assignment.isExpired && assignment.status === 'NOT_SUBMITTED' && (
-                        <div className="text-right">
-                          <span className="text-xs text-slate-500 block">Result</span>
-                          <span className="text-xl font-bold text-slate-500">N/A</span>
-                        </div>
-                      )}
-
-                      {/* Display the real score when available and not withheld. */}
-                      {statusInfo.showScore && (
-                        <div className="text-right">
-                          <span className="text-xs text-slate-500 block">Result</span>
-                          <span className={`text-xl font-bold ${Number(assignment.score) >= 5.0
-                              ? 'text-emerald-600'
-                              : Number(assignment.score) === 0
-                                ? 'text-rose-600'
-                                : 'text-amber-600'
-                            }`}>
-                            {typeof assignment.score === 'number' && (assignment.score > 10 ? (assignment.score / 10).toFixed(1) : assignment.score)}
+                    <div className="flex items-center gap-4 self-end md:self-start mt-2 md:mt-0 shrink-0 flex-wrap md:flex-nowrap">
+                      {/* Điểm số (hiển thị to và nổi bật) */}
+                      {displayScore !== null ? (
+                        <div className="text-right min-w-[48px]">
+                          <span className="text-[10px] text-ink-3 block">Result</span>
+                          <span className={`text-2xl font-bold tabular-nums ${
+                            statusInfo.tone === 'success' ? 'text-success-text' :
+                            statusInfo.tone === 'danger' ? 'text-danger-text' : 'text-warning-text'
+                          }`}>
+                            {displayScore}
                           </span>
                         </div>
-                      )}
+                      ) : assignment.isExpired && assignment.status === 'NOT_SUBMITTED' ? (
+                        // Quiet N/A placeholder khi hết deadline và chưa nộp
+                        <div className="text-right min-w-[48px]">
+                          <span className="text-[10px] text-ink-3 block">Result</span>
+                          <span className="text-2xl font-bold text-ink-3 tabular-nums">N/A</span>
+                        </div>
+                      ) : null}
 
-                      {/* Badge trạng thái */}
-                      <span className={`px-3 py-1 text-xs rounded-full font-medium ${statusInfo.badgeClass}`}>
-                        {statusInfo.label}
-                      </span>
+                      {/* StatusBadge */}
+                      <StatusBadge tone={statusInfo.tone} label={statusInfo.label} />
 
                       {/* Các nút hành động */}
                       <div className="flex items-center gap-2">
                         <button
+                          type="button"
                           disabled={assignment.isExpired}
                           title={assignment.isExpired ? 'The submission deadline has passed.' : undefined}
                           onClick={() => {
@@ -588,26 +571,33 @@ export default function StudentDashboardPage() {
                             setUploadError('');
                             setUploadSuccessMessage('');
                           }}
-                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow-md shadow-indigo-600/20 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                          className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition-colors shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none whitespace-nowrap"
                         >
-                          <UploadCloud size={14} />
-                          <span>{assignment.isExpired ? 'Deadline passed' : assignment.latestSubmissionId ? 'Resubmit' : 'Submit (.zip)'}</span>
+                          <UploadCloud size={14} aria-hidden="true" />
+                          <span>
+                            {assignment.isExpired
+                              ? 'Deadline passed'
+                              : assignment.latestSubmissionId
+                                ? 'Resubmit'
+                                : 'Submit (.zip)'}
+                          </span>
                         </button>
 
                         {/* Xem kết quả submission chi tiết */}
                         {assignment.latestSubmissionId && (
                           <button
+                            type="button"
                             onClick={() => navigate(`/submissions/${assignment.latestSubmissionId}/results`)}
-                            className="flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs px-3 py-2.5 rounded-xl transition"
+                            className="flex items-center gap-1 bg-neutral-bg hover:bg-slate-100 text-ink-2 hover:text-ink font-medium text-xs px-3 py-2.5 rounded-xl transition-colors border border-line whitespace-nowrap"
                             title="View detailed results"
                           >
                             <span>Details</span>
-                            <ArrowRight size={14} />
+                            <ArrowRight size={14} aria-hidden="true" />
                           </button>
                         )}
                       </div>
                     </div>
-                  </div>
+                  </article>
                 );
               })
             )}
@@ -615,34 +605,47 @@ export default function StudentDashboardPage() {
         )}
       </main>
 
-      {/* Modal Nộp assignments Upload (.zip) Thật */}
+      {/* ===== Modal Nộp bài (.zip) ===== */}
       {selectedAssignment && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) setSelectedAssignment(null); }}
+        >
+          <div className="bg-surface border border-line rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            {/* Header Modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-line">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Submit assignment online</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{selectedAssignment.title}</p>
+                <h3 className="text-base font-bold text-ink">Submit assignment</h3>
+                <p className="text-xs text-ink-3 mt-0.5 truncate">{selectedAssignment.title}</p>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedAssignment(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100"
+                className="p-1.5 text-ink-3 hover:text-ink rounded-xl hover:bg-neutral-bg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+                aria-label="Close modal"
               >
                 <X size={18} />
               </button>
             </div>
 
+            {/* Cảnh báo hết deadline */}
             {selectedAssignment.isExpired && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">The submission deadline has passed. Submissions and resubmissions are no longer accepted.</div>
+              <div className="rounded-xl border border-warning-border bg-warning-bg p-3 text-xs text-warning-text">
+                The submission deadline has passed. Submissions and resubmissions are no longer accepted.
+              </div>
             )}
 
-            {/* File selection */}
+            {/* Vùng kéo thả / chọn file */}
             <div
+              role="button"
+              tabIndex={0}
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition ${fileToUpload
-                  ? 'border-indigo-500 bg-indigo-50/50'
-                  : 'border-slate-300 hover:border-indigo-400 hover:bg-slate-50'
-                }`}
+              onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
+                fileToUpload
+                  ? 'border-brand-400 bg-brand-50/50'
+                  : 'border-line hover:border-brand-400 hover:bg-neutral-bg'
+              }`}
             >
               <input
                 ref={fileInputRef}
@@ -656,23 +659,23 @@ export default function StudentDashboardPage() {
                   }
                 }}
               />
-              <div className="flex flex-col items-center gap-2">
-                <div className="p-3 bg-indigo-100 text-indigo-600 rounded-2xl">
+              <div className="flex flex-col items-center gap-3">
+                <div className={`p-3 rounded-2xl ${fileToUpload ? 'bg-brand-100 text-brand-700' : 'bg-neutral-bg text-ink-3'}`}>
                   {fileToUpload ? <FileArchive size={32} /> : <UploadCloud size={32} />}
                 </div>
                 {fileToUpload ? (
                   <div>
-                    <p className="text-xs font-bold text-indigo-900">{fileToUpload.name}</p>
-                    <p className="text-[11px] text-indigo-600 mt-0.5">
+                    <p className="text-xs font-bold text-ink">{fileToUpload.name}</p>
+                    <p className="text-[11px] text-brand-600 mt-0.5">
                       {(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB • Ready to upload
                     </p>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-xs font-semibold text-slate-800">
-                      Click here to select your submission file <span className="text-indigo-600">.zip</span>
+                    <p className="text-xs font-semibold text-ink">
+                      Click to select your <span className="text-brand-600">.zip</span> file
                     </p>
-                    <p className="text-[11px] text-slate-400 mt-1">
+                    <p className="text-[11px] text-ink-3 mt-1">
                       ZIP files only • 10 MB max • Up to 5 submissions (Risk R01)
                     </p>
                   </div>
@@ -682,35 +685,37 @@ export default function StudentDashboardPage() {
 
             {/* Thông báo lỗi nếu có */}
             {uploadError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs">
-                <AlertCircle size={15} className="shrink-0" />
+              <div className="p-3 bg-danger-bg border border-danger-border rounded-xl flex items-center gap-2 text-danger-text text-xs">
+                <AlertCircle size={15} className="shrink-0" aria-hidden="true" />
                 <span>{uploadError}</span>
               </div>
             )}
 
             {/* Thông báo nộp thành công */}
             {uploadSuccessMessage && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700 text-xs">
-                <CheckCircle size={15} className="shrink-0" />
+              <div className="p-3 bg-success-bg border border-success-border rounded-xl flex items-center gap-2 text-success-text text-xs">
+                <CheckCircle size={15} className="shrink-0" aria-hidden="true" />
                 <span>{uploadSuccessMessage}</span>
               </div>
             )}
 
             {/* Footer Modal */}
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-3 pt-1">
               <button
+                type="button"
                 disabled={submitting}
                 onClick={() => setSelectedAssignment(null)}
-                className="px-4 py-2.5 text-xs text-slate-600 hover:bg-slate-100 rounded-xl transition"
+                className="px-4 py-2.5 text-xs text-ink-2 hover:bg-neutral-bg rounded-xl transition-colors border border-line"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 disabled={submitting || !fileToUpload || selectedAssignment.isExpired}
                 onClick={handleSubmitAssignment}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-md shadow-indigo-600/20 flex items-center gap-1.5 disabled:opacity-50"
+                className="px-5 py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-medium transition-colors shadow-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
+                {submitting ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <UploadCloud size={14} aria-hidden="true" />}
                 <span>{submitting ? 'Uploading...' : 'Confirm submission'}</span>
               </button>
             </div>
