@@ -18,9 +18,11 @@ import {
   AlertCircle,
   X,
   Plus,
-  Trash2,
   GraduationCap,
   Sparkles,
+  Menu,
+  ListChecks,
+  Trash2,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { LEVEL_STYLE, resolveLevel } from '../features/plagiarism/level';
@@ -189,7 +191,7 @@ export default function LecturerDashboardPage() {
   const [generationDifficulty, setGenerationDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [generatingAssignment, setGeneratingAssignment] = useState<boolean>(false);
   const [generationNotice, setGenerationNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [assignmentCreateMode, setAssignmentCreateMode] = useState<'NEW' | 'EXISTING'>('NEW');
+  const [assignmentCreateMode, setAssignmentCreateMode] = useState<'NEW' | 'EXISTING' | 'AI_DOC'>('NEW');
   const [existingAssignments, setExistingAssignments] = useState<AssignmentItem[]>([]);
   const [existingAssignmentsLoading, setExistingAssignmentsLoading] = useState<boolean>(false);
   const [existingAssignmentsError, setExistingAssignmentsError] = useState<string>('');
@@ -625,8 +627,9 @@ export default function LecturerDashboardPage() {
     setTestCases(testCases.filter((_, i) => i !== idx));
   };
 
+  const [nowTimestamp] = useState(() => Date.now());
   const isAssignmentExpired = (assignment: AssignmentItem) =>
-    Boolean(assignment.deadline && Date.now() > new Date(assignment.deadline).getTime());
+    Boolean(assignment.deadline && nowTimestamp > new Date(assignment.deadline).getTime());
   const deadlineFilteredAssignments = assignments.filter((assignment) => {
     if (assignmentDeadlineTab === 'DRAFT') {
       return assignment.status === 'DRAFT';
@@ -636,171 +639,272 @@ export default function LecturerDashboardPage() {
     return assignmentDeadlineTab === 'END' ? isAssignmentExpired(assignment) : !isAssignmentExpired(assignment);
   });
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex">
-      {/* Sidebar Navigation */}
-      <aside className="w-64 border-r border-slate-200 bg-white flex flex-col justify-between p-4 hidden md:flex shrink-0 shadow-sm">
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center font-bold text-white shadow-md shadow-orange-500/20">
-              A
-            </div>
-            <div>
-              <h1 className="text-sm font-bold text-slate-900">AITA-Intelligent</h1>
-              <p className="text-[11px] text-slate-500">Lecturer Workspace</p>
-            </div>
-          </div>
+  // Trạng thái mobile drawer sidebar
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-          <nav className="space-y-1 text-xs font-medium">
-            {[
-              { id: 'DASHBOARD', label: 'Dashboard', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
-              { id: 'CREATE_CLASS', label: 'Create new class', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
-              { id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => {
-                setAssignmentCreateMode('NEW');
-                setCreateAssignmentError('');
-                setShowCreateModal(true);
-              } },
-              { id: 'IMPORT_STUDENTS', label: 'Import students (Excel)', icon: Upload, action: () => setShowImportModal(true) },
-              { id: 'MANAGE_ASSIGNMENTS', label: 'Manage assignments', icon: Trash2, action: openAssignmentManager },
-              { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
-              {
-                id: 'APPEALS',
-                label: 'Appeals inbox',
-                icon: MessageSquare,
-                badge: pendingAppealsCount > 0 ? String(pendingAppealsCount) : undefined,
-                action: () => {
-                  setActiveTab('APPEALS');
-                  loadPendingAppeals();
-                },
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    if (item.action) {
-                      item.action();
-                    } else {
-                      setActiveTab(item.id);
-                    }
-                  }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition ${
-                    isActive
-                      ? 'bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-600/20'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon size={16} />
-                    <span>{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+  // Xây dựng danh sách nav items chung cho cả sidebar và drawer
+  const navGroups = [
+    {
+      groupLabel: 'Workspace',
+      items: [
+        { id: 'DASHBOARD', label: 'Dashboard', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
+      ],
+    },
+    {
+      groupLabel: 'Manage',
+      items: [
+        { id: 'CREATE_CLASS', label: 'Create new class', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
+        {
+          id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => {
+            setAssignmentCreateMode('NEW');
+            setCreateAssignmentError('');
+            setShowCreateModal(true);
+          }
+        },
+        { id: 'IMPORT_STUDENTS', label: 'Import students (Excel)', icon: Upload, action: () => setShowImportModal(true) },
+        { id: 'MANAGE_ASSIGNMENTS', label: 'Manage assignments', icon: ListChecks, action: openAssignmentManager },
+      ],
+    },
+    {
+      groupLabel: 'Insights',
+      items: [
+        { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
+        {
+          id: 'APPEALS',
+          label: 'Appeals inbox',
+          icon: MessageSquare,
+          badge: pendingAppealsCount > 0 ? String(pendingAppealsCount) : undefined,
+          action: () => {
+            setActiveTab('APPEALS');
+            loadPendingAppeals();
+          },
+        },
+      ],
+    },
+  ];
+
+  // Hàm render nav item dùng chung cho sidebar và drawer
+  const renderNavItem = (item: { id: string; label: string; icon: React.ComponentType<{size: number; className?: string}>; badge?: string; action?: () => void }, closeDrawer = false) => {
+    const Icon = item.icon;
+    const isActive = activeTab === item.id;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => {
+          if (item.action) item.action();
+          else setActiveTab(item.id);
+          if (closeDrawer) setDrawerOpen(false);
+        }}
+        aria-current={isActive ? 'page' : undefined}
+        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-all duration-150 relative ${
+          isActive
+            ? 'bg-brand-50 text-brand-700 font-semibold'
+            : 'text-ink-2 hover:text-ink hover:bg-slate-50'
+        }`}
+      >
+        {/* Chỉ thị 3px bên trái cho item đang active */}
+        {isActive && (
+          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-brand-600" aria-hidden="true" />
+        )}
+        <Icon size={15} className="shrink-0" />
+        <span className="flex-1 text-left truncate">{item.label}</span>
+        {item.badge && (
+          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold shrink-0">
+            {item.badge}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  // Nội dung sidebar (dùng chung cho cả desktop và mobile drawer)
+  const renderSidebarContent = (closeDrawer = false) => (
+    <>
+      {/* Logo block */}
+      <div className="flex items-center gap-3 px-2 py-1">
+        <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center font-black text-white text-sm tracking-wide shadow-sm shrink-0">
+          FPT
         </div>
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold text-ink truncate">AITA-Intelligent</h1>
+          <p className="text-[11px] text-ink-3">Lecturer Workspace</p>
+        </div>
+      </div>
 
-        {/* Thông tin Lecturer đăng nhập & Nút Sign out */}
-        <div className="border-t border-slate-200 pt-4 flex items-center justify-between px-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
-              {user?.fullName?.charAt(0) || 'GV'}
-            </div>
-            <div className="min-w-0 max-w-[130px]">
-              <p className="text-xs font-semibold text-slate-800 truncate">{user?.fullName || 'Lecturer'}</p>
-              <p className="text-[10px] text-slate-500 truncate">{user?.email || '@fe.edu.vn'}</p>
+      {/* Nav nhóm */}
+      <nav className="mt-5 flex-1 overflow-y-auto" aria-label="Sidebar navigation">
+        {navGroups.map((group) => (
+          <div key={group.groupLabel} className="mb-4">
+            <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-3">
+              {group.groupLabel}
+            </p>
+            <div className="space-y-0.5">
+              {group.items.map((item) => renderNavItem(item, closeDrawer))}
             </div>
           </div>
+        ))}
+      </nav>
+
+      {/* Thông tin Lecturer & Nút Sign out */}
+      <div className="border-t border-line pt-4 flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-brand-50 text-brand-700 border border-brand-100 flex items-center justify-center text-xs font-bold shrink-0 uppercase">
+            {user?.fullName?.charAt(0) || 'GV'}
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-ink truncate" title={user?.fullName || 'Lecturer'}>{user?.fullName || 'Lecturer'}</p>
+            <p className="text-[10px] text-ink-3 truncate" title={user?.email || '@fe.edu.vn'}>{user?.email || '@fe.edu.vn'}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem('aita_token');
+            localStorage.removeItem('aita_user');
+            navigate('/login', { replace: true });
+          }}
+          className="p-1.5 text-ink-3 hover:text-rose-600 rounded-xl hover:bg-slate-100 transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut size={16} />
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-dvh bg-bg text-ink flex">
+
+      {/* ===== SIDEBAR DESKTOP (>= lg) ===== */}
+      <aside className="w-64 border-r border-line bg-surface hidden lg:flex flex-col p-4 shrink-0 sticky top-0 h-dvh overflow-y-auto">
+        {renderSidebarContent(false)}
+      </aside>
+
+      {/* ===== MOBILE OFF-CANVAS DRAWER (< lg) ===== */}
+      {/* Backdrop */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden"
+          aria-hidden="true"
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+      {/* Panel drawer */}
+      <div
+        id="mobile-sidebar"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation menu"
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col p-4 bg-surface border-r border-line lg:hidden transition-transform duration-200 ease-out ${
+          drawerOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        style={{ width: 'min(85vw, 20rem)' }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-semibold text-ink">Navigation</span>
           <button
-            onClick={() => {
-              localStorage.removeItem('aita_token');
-              localStorage.removeItem('aita_user');
-              navigate('/login', { replace: true });
-            }}
-            className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-100 transition"
-            title="Sign out"
+            type="button"
+            onClick={() => setDrawerOpen(false)}
+            className="p-1.5 text-ink-3 hover:text-ink rounded-xl hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+            aria-label="Close navigation menu"
           >
-            <LogOut size={16} />
+            <X size={18} />
           </button>
         </div>
-      </aside>
+        <div className="flex flex-col flex-1 overflow-y-auto">
+          {renderSidebarContent(true)}
+        </div>
+      </div>
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md px-6 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
+        {/* ===== TOP FILTER BAR (sticky) ===== */}
+        <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur-md shadow-xs">
+          {/* Thanh trên: hamburger + breadcrumb/controls */}
+          <div className="px-4 sm:px-6 h-14 flex items-center gap-3 overflow-x-auto">
+            {/* Hamburger chỉ hiển thị trên mobile */}
+            <button
+              type="button"
+              aria-label="Open navigation menu"
+              aria-expanded={drawerOpen}
+              aria-controls="mobile-sidebar"
+              onClick={() => setDrawerOpen(true)}
+              className="p-2 text-ink-2 hover:text-ink rounded-xl hover:bg-slate-100 transition-colors lg:hidden shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+            >
+              <Menu size={20} />
+            </button>
+
             {activeTab === 'DASHBOARD' ? (
-              <>
-                <label className="text-xs text-slate-500">Class:</label>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Class select */}
                 {classesLoading ? (
-                  <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <span className="text-xs text-ink-3 flex items-center gap-1.5">
                     <Loader2 size={12} className="animate-spin" /> Loading...
                   </span>
                 ) : classes.length > 0 ? (
-                  <select
-                    value={selectedClassId}
-                    onChange={(e) => handleSelectClass(e.target.value)}
-                    className="text-xs font-mono bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl font-semibold border border-indigo-200 outline-none"
-                  >
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.classCode} ({c._count?.students || 0} students)
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <label className="text-xs text-ink-3 shrink-0">Class:</label>
+                    <select
+                      value={selectedClassId}
+                      onChange={(e) => handleSelectClass(e.target.value)}
+                      className="text-xs font-mono bg-brand-50 text-brand-700 px-3 py-1.5 rounded-xl font-semibold border border-brand-100 outline-none focus:ring-2 focus:ring-brand-600 cursor-pointer"
+                    >
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.classCode} ({c._count?.students || 0} students)
+                        </option>
+                      ))}
+                    </select>
+                  </>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => setShowCreateClassModal(true)}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                    className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1"
                   >
                     <Plus size={13} /> Create your first class
                   </button>
                 )}
 
-                {/* Active, End and Draft assignment tabs */}
+                {/* Segmented control Active / End / Drafts */}
                 {assignments.length > 0 && (
-                  <div className="ml-2 flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1">
+                  <div className="flex items-center gap-0.5 rounded-xl border border-line bg-neutral-bg p-1 shrink-0">
                     <button type="button" onClick={() => {
                       setAssignmentDeadlineTab('ACTIVE');
                       const firstActive = assignments.find((item) => item.status !== 'DRAFT' && !isAssignmentExpired(item));
                       if (firstActive) handleSelectAssignment(firstActive.id);
-                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${assignmentDeadlineTab === 'ACTIVE' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${assignmentDeadlineTab === 'ACTIVE' ? 'bg-surface text-brand-700 shadow-sm' : 'text-ink-2 hover:text-ink'}`}>
                       Active ({assignments.filter((item) => item.status !== 'DRAFT' && !isAssignmentExpired(item)).length})
                     </button>
                     <button type="button" onClick={() => {
                       setAssignmentDeadlineTab('END');
                       const firstEnded = assignments.find((item) => item.status !== 'DRAFT' && isAssignmentExpired(item));
                       if (firstEnded) handleSelectAssignment(firstEnded.id);
-                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${assignmentDeadlineTab === 'END' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${assignmentDeadlineTab === 'END' ? 'bg-surface text-brand-700 shadow-sm' : 'text-ink-2 hover:text-ink'}`}>
                       End ({assignments.filter((item) => item.status !== 'DRAFT' && isAssignmentExpired(item)).length})
                     </button>
                     <button type="button" onClick={() => {
                       setAssignmentDeadlineTab('DRAFT');
                       const firstDraft = assignments.find((item) => item.status === 'DRAFT');
                       if (firstDraft) handleSelectAssignment(firstDraft.id);
-                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold ${assignmentDeadlineTab === 'DRAFT' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                    }} className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${assignmentDeadlineTab === 'DRAFT' ? 'bg-surface text-amber-700 shadow-sm' : 'text-ink-2 hover:text-ink'}`}>
                       Drafts ({assignments.filter((item) => item.status === 'DRAFT').length})
                     </button>
                   </div>
                 )}
                 {assignments.length > 0 && deadlineFilteredAssignments.length === 0 && (
-                  <span className="ml-2 text-xs text-slate-400">
+                  <span className="text-xs text-ink-3">
                     {assignmentDeadlineTab === 'ACTIVE' ? 'No active assignments.' : assignmentDeadlineTab === 'END' ? 'No ended assignments.' : 'No draft assignments.'}
                   </span>
                 )}
                 {deadlineFilteredAssignments.length > 0 && (
                   <>
-                    <label className="text-xs text-slate-500 ml-2">Assignment:</label>
+                    <label className="text-xs text-ink-3 shrink-0">Assignment:</label>
                     <select value={deadlineFilteredAssignments.some((item) => item.id === selectedAssignmentId) ? selectedAssignmentId : deadlineFilteredAssignments[0].id}
                       onChange={(e) => handleSelectAssignment(e.target.value)}
-                      className="text-xs bg-slate-100 text-slate-800 px-3 py-1.5 rounded-xl font-medium border border-slate-200 outline-none">
+                      className="text-xs bg-neutral-bg text-ink px-3 py-1.5 rounded-xl font-medium border border-line outline-none focus:ring-2 focus:ring-brand-600 cursor-pointer max-w-[200px] truncate">
                       {deadlineFilteredAssignments.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.status === 'DRAFT' ? `[DRAFT] ${a.title}` : a.title}
@@ -809,39 +913,28 @@ export default function LecturerDashboardPage() {
                     </select>
                   </>
                 )}
-              </>
-            ) : activeTab === 'APPEALS' ? (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setActiveTab('DASHBOARD')}
-                  className="text-xs text-slate-500 hover:text-slate-800 font-medium transition"
-                >
-                  Dashboard
-                </button>
-                <span className="text-xs text-slate-300">/</span>
-                <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
-                  <MessageSquare size={14} className="text-indigo-600" />
-                  <span>Appeals inbox</span>
-                </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
+              /* Breadcrumb cho các tab khác */
+              <div className="flex items-center gap-1.5 text-xs">
                 <button
+                  type="button"
                   onClick={() => setActiveTab('DASHBOARD')}
-                  className="text-xs text-slate-500 hover:text-slate-800 font-medium transition"
+                  className="text-ink-3 hover:text-ink font-medium transition-colors"
                 >
                   Dashboard
                 </button>
-                <span className="text-xs text-slate-300">/</span>
-                <span className="text-xs font-semibold text-slate-900 flex items-center gap-1.5">
-                  <GitBranch size={14} className="text-indigo-600" />
-                  <span>Git Teamwork Analytics</span>
+                <ChevronRight size={13} className="text-ink-3" aria-hidden="true" />
+                <span className="font-semibold text-ink flex items-center gap-1.5">
+                  {activeTab === 'APPEALS' ? (
+                    <><MessageSquare size={14} className="text-brand-600" aria-hidden="true" /><span>Appeals inbox</span></>
+                  ) : (
+                    <><GitBranch size={14} className="text-brand-600" aria-hidden="true" /><span>Git Teamwork Analytics</span></>
+                  )}
                 </span>
               </div>
             )}
           </div>
-
-
         </header>
 
         <div className="p-6 space-y-6 max-w-6xl w-full mx-auto">
@@ -1446,10 +1539,10 @@ export default function LecturerDashboardPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setAssignmentCreateMode('AI_DOC' as any);
+                    setAssignmentCreateMode('AI_DOC');
                     setCreateAssignmentError('');
                   }}
-                  className={`rounded-lg px-2 py-2 font-semibold transition flex items-center justify-center gap-1.5 ${assignmentCreateMode === ('AI_DOC' as any) ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  className={`rounded-lg px-2 py-2 font-semibold transition flex items-center justify-center gap-1.5 ${assignmentCreateMode === 'AI_DOC' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                 >
                   <Sparkles size={13} />
                   <span>AI Syllabus Wizard</span>
@@ -1479,7 +1572,7 @@ export default function LecturerDashboardPage() {
               </div>
 
               {/* 1. CHẾ ĐỘ 1: AI SYLLABUS WIZARD (ĐỘC LẬP HOÀN TOÀN) */}
-              {assignmentCreateMode === ('AI_DOC' as any) && (
+              {assignmentCreateMode === 'AI_DOC' && (
                 <div className="py-1">
                   <DocumentAssignmentWizard
                     classes={classes.map((c) => ({ id: c.id, classCode: c.classCode }))}
@@ -1758,7 +1851,7 @@ export default function LecturerDashboardPage() {
               )}
             </div>
 
-            {assignmentCreateMode !== ('AI_DOC' as any) && (
+            {assignmentCreateMode !== 'AI_DOC' && (
               <div className="shrink-0 flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-white">
                 <button
                   disabled={creatingAssignment}

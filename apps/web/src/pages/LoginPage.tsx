@@ -1,9 +1,18 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGoogleLogin } from '@react-oauth/google';
-import { GraduationCap, School, ShieldAlert, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  GraduationCap,
+  School,
+  ShieldCheck,
+  Code2,
+  Cpu,
+  BarChart3,
+  AlertTriangle,
+} from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
 import { isTokenExpired } from '../utils/auth';
+import { Alert, Spinner } from '../components/ui';
 
 // Kiểu trả về từ API đăng nhập
 interface AuthResponseData {
@@ -209,277 +218,190 @@ export default function LoginPage() {
   const isLoading = loading !== null;
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
-      }}
-    >
-      {/* Hiệu ứng nền */}
-      <div
-        style={{
-          position: 'fixed',
-          inset: 0,
-          pointerEvents: 'none',
-          zIndex: 0,
-          background:
-            'radial-gradient(ellipse 80% 60% at 20% 20%, rgba(99,102,241,0.15) 0%, transparent 60%),' +
-            'radial-gradient(ellipse 60% 50% at 80% 80%, rgba(245,158,11,0.1) 0%, transparent 60%)',
-        }}
-      />
-
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', maxWidth: 440 }}>
-        {/* Card đăng nhập */}
+    <div className="min-h-screen bg-bg flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      {/* Bố cục chia đôi trên màn hình lớn (>= lg), xếp chồng trên màn hình nhỏ */}
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 rounded-3xl overflow-hidden border border-line shadow-sm bg-surface">
+        
+        {/* Panel Thương hiệu bên trái (Gradient xanh tím sâu - duy nhất trong hệ thống) */}
         <div
+          className="lg:col-span-5 p-8 lg:p-12 flex flex-col justify-between text-white"
           style={{
-            background: 'rgba(15,23,42,0.88)',
-            backdropFilter: 'blur(24px)',
-            WebkitBackdropFilter: 'blur(24px)',
-            border: '1px solid rgba(99,102,241,0.25)',
-            borderRadius: 24,
-            padding: '38px 32px',
-            boxShadow:
-              '0 0 0 1px rgba(255,255,255,0.04) inset,' +
-              '0 32px 64px rgba(0,0,0,0.5)',
-            textAlign: 'center',
+            background: 'linear-gradient(145deg, #1e1b4b 0%, #0f172a 100%)',
           }}
         >
-          {/* Logo FPT */}
-          <div
-            style={{
-              width: 68,
-              height: 68,
-              background: 'linear-gradient(135deg, #f97316 0%, #f59e0b 100%)',
-              borderRadius: 18,
-              margin: '0 auto 20px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 8px 32px rgba(249,115,22,0.4)',
-            }}
-          >
-            <span style={{ color: '#fff', fontWeight: 900, fontSize: 22, letterSpacing: 1 }}>
-              FPT
-            </span>
-          </div>
-
-          <h1 style={{ color: '#f8fafc', fontWeight: 800, fontSize: 24, margin: '0 0 8px' }}>
-            AITA-Intelligent
-          </h1>
-          <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 28px', lineHeight: 1.6 }}>
-            Teaching Assistant &amp; AST Analysis Platform
-          </p>
-
-          {/* Thông báo lỗi nếu có */}
-          {error && (
-            <div
-              style={{
-                background: 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: 12,
-                padding: '10px 14px',
-                marginBottom: 20,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                textAlign: 'left',
-              }}
-            >
-              <ShieldAlert size={16} style={{ color: '#f87171', flexShrink: 0 }} />
-              <span style={{ color: '#fca5a5', fontSize: 13 }}>{error}</span>
+          <div>
+            {/* Logo FPT */}
+            <div className="flex items-center gap-3 mb-8">
+              <div className="w-12 h-12 rounded-2xl bg-accent flex items-center justify-center font-black text-white text-xl tracking-wider shadow-md shadow-orange-500/30">
+                FPT
+              </div>
+              <div>
+                <span className="text-xl font-bold tracking-tight text-white block">
+                  AITA-Intelligent
+                </span>
+                <span className="text-xs text-indigo-200/80">FPT Education Platform</span>
+              </div>
             </div>
-          )}
 
-          {/* TUYẾN CHÍNH: Đăng nhập Google thật (Primary Path) */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* Student - Google */}
-            <button
-              id="btn-login-student-google"
-              onClick={handleStudentGoogleClick}
-              disabled={isLoading}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 12,
-                padding: '13px 20px',
-                borderRadius: 14,
-                border: '1px solid rgba(99,102,241,0.5)',
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.2) 0%, rgba(79,70,229,0.15) 100%)',
-                color: '#e0e7ff',
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                opacity: isLoading && loading !== 'STUDENT' ? 0.5 : 1,
-                transition: 'all 0.2s ease',
-                boxShadow: '0 4px 16px rgba(99,102,241,0.2)',
-              }}
-            >
-              {loading === 'STUDENT' ? (
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <GoogleIcon size={18} />
-              )}
-              <span>Sign in with Google — Student</span>
-            </button>
+            <h2 className="text-2xl lg:text-3xl font-semibold text-white tracking-tight leading-snug mb-3">
+              Teaching Assistant &amp; AST Analysis Platform
+            </h2>
+            <p className="text-sm text-indigo-200/90 leading-relaxed mb-8">
+              Automated code grading, AST structural similarity analysis, and intelligent feedback for FPT programming courses.
+            </p>
 
-            {/* Lecturer - Google */}
-            <button
-              id="btn-login-lecturer-google"
-              onClick={handleLecturerGoogleClick}
-              disabled={isLoading}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 12,
-                padding: '12px 20px',
-                borderRadius: 14,
-                border: '1px solid rgba(245,158,11,0.35)',
-                background: 'rgba(245,158,11,0.1)',
-                color: '#fde68a',
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                opacity: isLoading && loading !== 'LECTURER' ? 0.5 : 1,
-                transition: 'all 0.2s ease',
-              }}
-            >
-              {loading === 'LECTURER' ? (
-                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <GoogleIcon size={16} />
-              )}
-              <span>Sign in with Google — Lecturer</span>
-            </button>
-          </div>
-
-          {/* Quy định Domain FPT */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              marginTop: 18,
-              color: '#64748b',
-              fontSize: 12,
-            }}
-          >
-            <ShieldCheck size={13} style={{ color: '#22c55e' }} />
-            <span>
-              Accepted domains{' '}
-              <strong style={{ color: '#94a3b8' }}>@fpt.edu.vn</strong> &amp;{' '}
-              <strong style={{ color: '#94a3b8' }}>@fe.edu.vn</strong>
-            </span>
-          </div>
-
-          {/* CHẾ ĐỘ DEV MODE (Chỉ hiển thị khi import.meta.env.DEV === true && VITE_ENABLE_DEV_LOGIN === 'true') */}
-          {ENABLE_DEV_LOGIN && (
-            <div
-              style={{
-                marginTop: 24,
-                paddingTop: 20,
-                borderTop: '1px dashed rgba(245,158,11,0.25)',
-              }}
-            >
-              <div
-                style={{
-                  background: 'rgba(245,158,11,0.08)',
-                  border: '1px solid rgba(245,158,11,0.25)',
-                  borderRadius: 14,
-                  padding: '14px',
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                  <AlertCircle size={14} style={{ color: '#f59e0b' }} />
-                  <span style={{ color: '#fbbf24', fontSize: 12, fontWeight: 700 }}>
-                    Local development mode (VITE_ENABLE_DEV_LOGIN=true)
-                  </span>
+            {/* Các điểm nổi bật của nền tảng */}
+            <div className="space-y-4 pt-4 border-t border-indigo-900/60">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5">
+                  <Code2 size={16} />
                 </div>
-                <p style={{ color: '#94a3b8', fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>
-                  Use this mode to quickly test the UI without configuring a real Google Client ID:
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <button
-                    id="btn-login-student-dev"
-                    onClick={() => handleDevLogin('STUDENT')}
-                    disabled={isLoading}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      padding: '8px 12px',
-                      borderRadius: 10,
-                      background: 'rgba(99,102,241,0.15)',
-                      border: '1px solid rgba(99,102,241,0.3)',
-                      color: '#a5b4fc',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <GraduationCap size={15} />
-                    <span>Student — Dev Mode</span>
-                  </button>
+                <div className="text-xs text-indigo-100">
+                  <strong className="block text-white font-medium mb-0.5">Automated Sandbox Testing</strong>
+                  Real-time unit testing execution with score calculation.
+                </div>
+              </div>
 
-                  <button
-                    id="btn-login-lecturer-dev"
-                    onClick={() => handleDevLogin('LECTURER')}
-                    disabled={isLoading}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      padding: '8px 12px',
-                      borderRadius: 10,
-                      background: 'rgba(245,158,11,0.12)',
-                      border: '1px solid rgba(245,158,11,0.3)',
-                      color: '#fcd34d',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <School size={15} />
-                    <span>Lecturer — Dev Mode</span>
-                  </button>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5">
+                  <Cpu size={16} />
+                </div>
+                <div className="text-xs text-indigo-100">
+                  <strong className="block text-white font-medium mb-0.5">AST Structural Analysis</strong>
+                  Similarity checking as a reference for lecturer review.
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5">
+                  <BarChart3 size={16} />
+                </div>
+                <div className="text-xs text-indigo-100">
+                  <strong className="block text-white font-medium mb-0.5">Performance Analytics</strong>
+                  Tracking submission rates and class performance insights.
                 </div>
               </div>
             </div>
-          )}
+          </div>
 
-          {/* Footer */}
-          <div
-            style={{
-              marginTop: 24,
-              paddingTop: 16,
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-              color: '#475569',
-              fontSize: 11,
-            }}
-          >
+          <div className="mt-8 pt-6 border-t border-indigo-900/60 text-xs text-indigo-300/70">
+            FPT University Academic Portal
+          </div>
+        </div>
+
+        {/* Khung đăng nhập bên phải */}
+        <div className="lg:col-span-7 p-6 sm:p-10 lg:p-12 flex flex-col justify-between bg-surface">
+          <div className="max-w-md mx-auto w-full">
+            <div className="mb-8">
+              <h1 className="text-2xl font-semibold text-ink tracking-tight">Sign in to your account</h1>
+              <p className="text-sm text-ink-3 mt-1.5">
+                Choose your role to authenticate with your official FPT Google account.
+              </p>
+            </div>
+
+            {/* Thông báo lỗi nếu có */}
+            {error && (
+              <Alert tone="danger" className="mb-6" onClose={() => setError('')}>
+                {error}
+              </Alert>
+            )}
+
+            {/* Các nút bấm Google đồng bộ phong cách viền trắng/xám hiện đại */}
+            <div className="flex flex-col gap-3.5">
+              {/* Nút Sinh viên */}
+              <button
+                id="btn-login-student-google"
+                type="button"
+                onClick={handleStudentGoogleClick}
+                disabled={isLoading}
+                className="w-full h-12 px-5 rounded-xl border border-line bg-surface hover:bg-slate-50 active:bg-slate-100 text-ink text-sm font-medium flex items-center justify-center gap-3 transition-colors shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {loading === 'STUDENT' ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <GoogleIcon size={18} />
+                )}
+                <span>Sign in with Google — Student</span>
+              </button>
+
+              {/* Nút Giảng viên */}
+              <button
+                id="btn-login-lecturer-google"
+                type="button"
+                onClick={handleLecturerGoogleClick}
+                disabled={isLoading}
+                className="w-full h-12 px-5 rounded-xl border border-line bg-surface hover:bg-slate-50 active:bg-slate-100 text-ink text-sm font-medium flex items-center justify-center gap-3 transition-colors shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {loading === 'LECTURER' ? (
+                  <Spinner size="sm" />
+                ) : (
+                  <GoogleIcon size={18} />
+                )}
+                <span>Sign in with Google — Lecturer</span>
+              </button>
+            </div>
+
+            {/* Quy định Domain hợp lệ */}
+            <div className="flex items-center justify-center gap-2 mt-5 text-xs text-ink-3">
+              <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+              <span>
+                Accepted domains: <strong className="text-ink-2 font-medium">@fpt.edu.vn</strong> &amp; <strong className="text-ink-2 font-medium">@fe.edu.vn</strong>
+              </span>
+            </div>
+
+            {/* Khung Dev Mode (Dành riêng cho môi trường development cục bộ) */}
+            {ENABLE_DEV_LOGIN && (
+              <div className="mt-8 pt-6 border-t border-line">
+                <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 p-4 text-left">
+                  <div className="flex items-center gap-2 mb-1.5 text-amber-800 text-xs font-semibold">
+                    <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                    <span>Local Development Mode</span>
+                  </div>
+                  <p className="text-xs text-amber-900/80 mb-3 leading-relaxed">
+                    Bypass OAuth popup with mock credentials for local testing:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      id="btn-login-student-dev"
+                      type="button"
+                      onClick={() => handleDevLogin('STUDENT')}
+                      disabled={isLoading}
+                      className="h-9 px-3 rounded-lg border border-amber-300 bg-white hover:bg-amber-100/70 text-amber-900 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    >
+                      <GraduationCap size={14} />
+                      <span>Student (Dev)</span>
+                    </button>
+                    <button
+                      id="btn-login-lecturer-dev"
+                      type="button"
+                      onClick={() => handleDevLogin('LECTURER')}
+                      disabled={isLoading}
+                      className="h-9 px-3 rounded-lg border border-amber-300 bg-white hover:bg-amber-100/70 text-amber-900 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    >
+                      <School size={14} />
+                      <span>Lecturer (Dev)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Dòng chân trang */}
+          <div className="mt-8 pt-4 border-t border-line text-center text-xs text-ink-3">
             SWP391 · Group 3 · Milestone 3 — Full Pipeline Integration
           </div>
         </div>
-      </div>
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
+      </div>
     </div>
   );
 }
 
-// Google "G" logo SVG component
+// Biểu tượng Google chính hãng chuẩn SVG
 function GoogleIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
         fill="#4285F4"
