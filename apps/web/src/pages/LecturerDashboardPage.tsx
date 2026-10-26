@@ -25,6 +25,7 @@ import {
 import { apiRequest } from '../services/api';
 import { LEVEL_STYLE, resolveLevel } from '../features/plagiarism/level';
 import { DocumentAssignmentWizard } from '../components/assignment-wizard/DocumentAssignmentWizard';
+import { AitaLogo } from '../components/AitaLogo';
 
 // Kiểu dữ liệu lớp học từ backend
 interface ClassItem {
@@ -434,8 +435,11 @@ export default function LecturerDashboardPage() {
     }
     if (!window.confirm(`Permanently delete ${selectedDeleteAssignmentIds.length} selected assignment(s)? Related submissions and test cases may also be deleted.`)) return;
     setAssignmentDeleteLoading(true);
-    setAssignmentDeleteMessage(null);
-    const results = await Promise.all(selectedDeleteAssignmentIds.map((id) => apiRequest(`/assignments/${id}`, { method: 'DELETE' })));
+    const results: Array<{ success: boolean; message?: string }> = [];
+    for (const id of selectedDeleteAssignmentIds) {
+      const res = await apiRequest<{ message?: string }>(`/assignments/${id}`, { method: 'DELETE' });
+      results.push(res);
+    }
     const succeeded = results.filter((result) => result.success).length;
     setAssignmentDeleteLoading(false);
     setSelectedDeleteAssignmentIds([]);
@@ -676,8 +680,8 @@ export default function LecturerDashboardPage() {
       <aside className="sticky top-0 h-screen w-64 border-r border-slate-200 bg-white flex flex-col justify-between p-4 hidden md:flex shrink-0 shadow-sm overflow-hidden">
         <div className="space-y-6 min-h-0 overflow-y-auto">
           <div className="flex items-center gap-3 px-2">
-            <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center font-bold text-white shadow-md shadow-orange-500/20">
-              A
+            <div className="w-9 h-9 flex items-center justify-center shrink-0">
+              <AitaLogo size={36} />
             </div>
             <div>
               <h1 className="text-sm font-bold text-slate-900">AITA-Intelligent</h1>

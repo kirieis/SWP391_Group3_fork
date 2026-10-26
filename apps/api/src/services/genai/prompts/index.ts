@@ -288,22 +288,25 @@ Analyze step by step (Chain-of-Thought), then provide scores and comments in Eng
 // Nhận compiler stderr → AI giải thích dễ hiểu cho sinh viên
 // ==============================================================================
 
+// NFR-17: Giải thích lỗi biên dịch bằng tiếng Việt cho sinh viên
 const ERROR_EXPLANATION_SYSTEM = `Bạn là một trợ giảng lập trình tại trường đại học FPT.
-Nhiệm vụ của bạn là giải thích lỗi biên dịch (compilation error) cho sinh viên năm nhất
-in clear and student-friendly English.
+Nhiệm vụ của bạn là giải thích lỗi biên dịch (compilation error) bằng TIẾNG VIỆT cho sinh viên năm nhất,
+theo yêu cầu NFR-17 của hệ thống AITA-Intelligent.
 
-QUY TẮC:
-- Giải thích lỗi bằng ngôn ngữ đời thường, tránh thuật ngữ phức tạp.
+QUY TẮC (bắt buộc tuân theo):
+- Toàn bộ nội dung trong JSON output PHẢI viết bằng tiếng Việt.
+- Giải thích lỗi bằng ngôn ngữ đời thường, dễ hiểu, tránh thuật ngữ kỹ thuật phức tạp.
 - Chỉ ra chính xác dòng code bị lỗi nếu có thể.
-- Đưa ra gợi ý cách sửa cụ thể (kèm code mẫu nếu cần).
-- Nếu lỗi phổ biến, giải thích thêm nguyên nhân hay gặp.
+- Đưa ra gợi ý cách sửa cụ thể (kèm đoạn code mẫu nếu cần — code mẫu được phép bằng ngôn ngữ lập trình).
+- Nếu lỗi phổ biến, giải thích thêm nguyên nhân hay gặp để sinh viên rút kinh nghiệm.
+- Giữ giọng văn thân thiện, khuyến khích sinh viên.
 
-ĐỊNH DẠNG OUTPUT (JSON, không dùng markdown):
+ĐỊNH DẠNG OUTPUT (JSON hợp lệ, không dùng markdown bên ngoài JSON):
 {
-  "errorType": "string (tên lỗi ngắn gọn, vd: 'Lỗi biến chưa khai báo')",
-  "explanation": "string (detailed explanation in English)",
-  "suggestion": "string (gợi ý cách sửa kèm code mẫu nếu có)",
-  "relatedConcept": "string (khái niệm liên quan để sinh viên tự học thêm)"
+  "errorType": "string (tên lỗi ngắn gọn bằng tiếng Việt, ví dụ: 'Lỗi biến chưa được khai báo')",
+  "explanation": "string (giải thích chi tiết bằng tiếng Việt — nguyên nhân lỗi, tại sao bị lỗi)",
+  "suggestion": "string (hướng dẫn cách sửa bằng tiếng Việt, kèm đoạn code minh họa nếu cần)",
+  "relatedConcept": "string (khái niệm lập trình liên quan bằng tiếng Việt, để sinh viên tự tìm hiểu thêm)"
 }`;
 
 export function buildErrorExplanationPrompt(
@@ -311,7 +314,7 @@ export function buildErrorExplanationPrompt(
   sourceCode: string,
   language: string
 ): PromptPayload {
-  // Cắt stderr và source nếu quá dài
+  // Cắt stderr và source nếu quá dài để tránh vượt context window
   const truncatedStderr = stderr.length > 2000
     ? stderr.substring(0, 2000) + "\n... [stderr truncated]"
     : stderr;
@@ -333,7 +336,8 @@ Mã nguồn của sinh viên:
 ${truncatedSource}
 \`\`\`
 
-Please explain this compiler error in clear English for a first-year university student.`,
+Hãy giải thích lỗi biên dịch này bằng TIẾNG VIỆT, dễ hiểu cho sinh viên năm nhất đại học FPT.
+Toàn bộ nội dung JSON output phải bằng tiếng Việt (trừ đoạn code mẫu minh họa).`,
     temperature: 0.2,
     maxTokens: 1024,
     jsonMode: true,

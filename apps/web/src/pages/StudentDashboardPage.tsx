@@ -6,7 +6,6 @@ import {
   Clock,
   Search,
   LogOut,
-  FileCode,
   ArrowRight,
   UploadCloud,
   FileArchive,
@@ -16,6 +15,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
+import { AitaLogo } from '../components/AitaLogo';
 
 export interface AssignmentItem {
   id: string;
@@ -166,6 +166,8 @@ export default function StudentDashboardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccessMessage, setUploadSuccessMessage] = useState('');
+  // SRS US-03 / Risk R01: track remaining attempts returned by backend (max 5)
+  const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const stopPolling = () => {
@@ -327,14 +329,19 @@ export default function StudentDashboardPage() {
     setSubmitting(false);
 
     if (res.success && res.data?.submissionId) {
-      setUploadSuccessMessage(res.message || 'Submission uploaded successfully! Automatic grading has started.');
+      // Capture attemptsLeft from backend (SRS US-03 / Risk R01)
+      const left = res.data?.attemptsLeft ?? null;
+      setAttemptsLeft(left);
+      const attemptsMsg = left !== null ? ` (${left} attempt${left !== 1 ? 's' : ''} remaining)` : '';
+      setUploadSuccessMessage((res.message || 'Submission uploaded successfully! Automatic grading has started.') + attemptsMsg);
       setTimeout(() => {
         setSelectedAssignment(null);
         setFileToUpload(null);
         setUploadSuccessMessage('');
+        setAttemptsLeft(null);
         loadAssignments(false);
         startPolling();
-      }, 1000);
+      }, 3000);
     } else {
       // Hiển thị chính xác thông báo lỗi từ backend (ví dụ: đã quá hạn nộp, quá số lần nộp cho phép Risk R01)
       setUploadError(res.message || 'Submission failed. Please try again.');
@@ -363,8 +370,8 @@ export default function StudentDashboardPage() {
       {/* Top Navbar */}
       <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center font-bold text-white shadow-md shadow-orange-500/20">
-            A
+          <div className="w-9 h-9 flex items-center justify-center shrink-0">
+            <AitaLogo size={36} />
           </div>
           <div>
             <h1 className="text-sm font-bold text-slate-900">AITA-Intelligent</h1>
@@ -568,6 +575,7 @@ export default function StudentDashboardPage() {
                             setFileToUpload(null);
                             setUploadError('');
                             setUploadSuccessMessage('');
+                            setAttemptsLeft(null);
                           }}
                           className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition"
                         >
@@ -670,7 +678,10 @@ export default function StudentDashboardPage() {
                         Click here to select your submission file <span className="text-indigo-600">.zip</span>
                       </p>
                       <p className="text-[11px] text-slate-400 mt-1">
-                        ZIP files only • 10 MB max • Up to 5 submissions (Risk R01)
+                        ZIP files only • 10 MB max •{' '}
+                        {attemptsLeft !== null
+                          ? <span className={attemptsLeft <= 1 ? 'text-rose-500 font-semibold' : 'text-amber-600 font-medium'}>{attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} remaining (Risk R01)</span>
+                          : 'Up to 5 submissions per assignment (Risk R01)'}
                       </p>
                     </div>
                   )}

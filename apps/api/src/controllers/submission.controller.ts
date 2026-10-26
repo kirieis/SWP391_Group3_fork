@@ -9,7 +9,8 @@ import { astService } from "../services/ast.service.js";
 import { gradingService } from "../services/grading.service.js";
 
 // Maximum number of allowed submission attempts per student per assignment (Risk R01)
-const MAX_SUBMISSION_ATTEMPTS = 25;
+// SRS §8.3 Risk R01: "Limit to max 5 submissions per assignment per student."
+const MAX_SUBMISSION_ATTEMPTS = 5;
 
 // 1. Submit assignment (US12 & Risk R01)
 export const submitAssignment = async (req: Request, res: Response) => {
@@ -66,7 +67,7 @@ export const submitAssignment = async (req: Request, res: Response) => {
         hashSum.update(fileBuffer);
         const fileHash = hashSum.digest("hex");
 
-        // 4. Validate ZIP magic bytes (50 4B 03 04)
+        // 4. Validate ZIP magic bytes (50 4B 03 04) - Defensive security check beyond SRS
         if (fileBuffer.length < 4 || fileBuffer[0] !== 0x50 || fileBuffer[1] !== 0x4b || fileBuffer[2] !== 0x03 || fileBuffer[3] !== 0x04) {
             fs.unlinkSync(file.path); // Remove invalid file
             return res.status(400).json({ success: false, message: "Uploaded file is not a valid ZIP archive (Invalid magic bytes)." });

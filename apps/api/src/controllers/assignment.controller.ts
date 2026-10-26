@@ -272,8 +272,12 @@ export const deleteAssignment = async (req: Request, res: Response) => {
                     { submission1Id: { in: submissionIds } },
                     { submission2Id: { in: submissionIds } },
                 ] } });
+                await tx.aSTFingerprint.deleteMany({ where: { submissionId: { in: submissionIds } } });
+                await tx.appeal.deleteMany({ where: { submissionId: { in: submissionIds } } });
+                await tx.scoreAuditLog.deleteMany({ where: { submissionId: { in: submissionIds } } });
                 await tx.submission.deleteMany({ where: { assignmentId } });
             }
+            await tx.testCase.deleteMany({ where: { assignmentId } });
             await tx.assignment.delete({ where: { id: assignmentId } });
         });
         return res.json({ success: true, message: "Assignment and its related submissions deleted successfully." });

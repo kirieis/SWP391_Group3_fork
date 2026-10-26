@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -111,6 +112,31 @@ export default function GradingResultsPage() {
 
     return () => clearInterval(interval);
   }, [submission, loadSubmission]);
+
+  // WebSocket real-time progress update (SRS 6.7.3 Screen 3)
+  useEffect(() => {
+    if (!id) return;
+    const socketUrl = import.meta.env.VITE_API_URL
+      ? new URL(import.meta.env.VITE_API_URL).origin
+      : 'http://localhost:5000';
+
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+    });
+
+    socket.emit('join_submission', id);
+
+    socket.on('grading_progress', (data: any) => {
+      if (data && data.submissionId === id) {
+        loadSubmission(false);
+      }
+    });
+
+    return () => {
+      socket.emit('leave_submission', id);
+      socket.disconnect();
+    };
+  }, [id, loadSubmission]);
 
   // Xử lý gửi khiếu nại (Appeal) thật qua POST /submissions/appeal
   const handleSendAppeal = async () => {
