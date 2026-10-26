@@ -22,7 +22,7 @@ echo   CA HAI DICH VU DA DUOC KHOI DONG!
 echo.
 echo   Backend : http://localhost:5000/health
 echo   Ngrok   : https://sentinellike-axel-hugeously.ngrok-free.dev
-echo   Frontend: https://swp391-aita.vercel.app  (neu da deploy)
+echo   Frontend: https://swp-391-group3.vercel.app  (neu da deploy)
 echo  =====================================================
 echo.
 echo  Nhan phim bat ky de dong cua so nay...
