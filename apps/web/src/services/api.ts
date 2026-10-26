@@ -23,6 +23,9 @@ export async function apiRequest<T = unknown>(
         ...(options.headers as Record<string, string>),
     };
 
+    // Bỏ qua trang cảnh báo của ngrok khi gọi API từ xa
+    headers["ngrok-skip-browser-warning"] = "true";
+
     // Nếu body không phải là FormData (file upload) thì thêm Content-Type JSON
     if (!(options.body instanceof FormData)) {
         headers["Content-Type"] = "application/json";

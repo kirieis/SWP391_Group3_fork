@@ -16,5 +16,8 @@
         "sandbox:build": "npm run --workspace=@aita/sandbox-engine build",
         "sandbox:test": "npm run --workspace=@aita/sandbox-engine test",
         "docker:build:java17": "npm run --workspace=@aita/sandbox-engine docker:build:java17"
+    },
+    "devDependencies": {
+        "docx": "^9.14.0"
     }
 }
