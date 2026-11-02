@@ -210,19 +210,28 @@ export default function LoginPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: #f8fafc;
+          background-color: #0f172a;
+          background-image: 
+            linear-gradient(135deg, rgba(15, 23, 42, 0.72) 0%, rgba(30, 41, 59, 0.65) 100%),
+            url('/fpt_campus_quynhon_clean.png');
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          background-attachment: fixed;
           padding: 24px 16px;
           font-family: 'Inter', system-ui, sans-serif;
         }
 
         .lp-card {
-          background: #ffffff;
+          background: rgba(255, 255, 255, 0.96);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
           border-radius: 24px;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 20px 40px -10px rgba(15,23,42,0.08);
+          box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.25);
           padding: 44px 44px 36px;
           width: 100%;
           max-width: 500px;
-          border: 1px solid #e2e8f0;
+          border: 1px solid rgba(226, 232, 240, 0.8);
           position: relative;
         }
 
