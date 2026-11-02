@@ -172,6 +172,8 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
                 // Plagiarism matches: fetch rồi lọc theo role bên dưới
                 plagiarismMatches1: true,
                 plagiarismMatches2: true,
+                // ScoreAuditLog: để phân biệt automaticScore vs lecturerScore (US-04)
+                auditLogs: { orderBy: { createdAt: "asc" } },
             },
         });
 
@@ -205,9 +207,93 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
             }
         }
 
+        /**
+         * Classify error type from grading engine output (US-04 Error Analysis)
+         * Returns one of: COMPILE_ERROR | RUNTIME_ERROR | TIMEOUT | MLE | WRONG_ANSWER | PASSED
+         */
+        const classifyErrorType = (
+            error: string | undefined,
+            passed: boolean,
+            durationMs?: number,
+        ): string => {
+            if (passed) return "PASSED";
+            if (!error) return "WRONG_ANSWER";
+            const e = error.toLowerCase();
+            // Timeout: exceeded time limit or SIGKILL
+            if (e.includes("sigkill") || e.includes("time limit") || (durationMs !== undefined && durationMs >= 5000)) {
+                return "TIMEOUT";
+            }
+            // Memory limit exceeded
+            if (e.includes("outofmemoryerror") || e.includes("memory limit") || e.includes("memoryerror")) {
+                return "MLE";
+            }
+            // Compile error: javac / python syntax / cs compile
+            if (
+                e.includes("error:") && (
+                    e.includes(".java:") || e.includes(".py:") || e.includes(".cs:") ||
+                    e.includes("syntaxerror") || e.includes("nameerror") || e.includes("indentationerror")
+                )
+            ) {
+                return "COMPILE_ERROR";
+            }
+            // Runtime exception
+            if (
+                e.includes("exception in thread") || e.includes("runtimeexception") ||
+                e.includes("nullpointerexception") || e.includes("arrayindexoutofbounds") ||
+                e.includes("stackoverflowerror") || e.includes("traceback (most recent call last)")
+            ) {
+                return "RUNTIME_ERROR";
+            }
+            // Fallback: treat any remaining "error:" as compile error
+            if (e.includes("error:")) return "COMPILE_ERROR";
+            return "WRONG_ANSWER";
+        };
+
+        // Build a lookup map: testCaseId -> { inputData, expectedOutput, scoreWeight }
+        const tcMap = new Map<string, { inputData?: string | null; expectedOutput?: string | null; scoreWeight: number }>(
+            (submission.assignment?.testCases ?? []).map((tc) => [
+                tc.id,
+                {
+                    inputData: tc.inputData,
+                    expectedOutput: tc.expectedOutput,
+                    scoreWeight: tc.scoreWeight,
+                },
+            ])
+        );
+
+        // Enrich each test result with inputData, scoreWeight and errorType (US-04)
+        const enrichedTestResults = (parsedTestResults as any[]).map((r) => {
+            const tc = r.testCaseId ? tcMap.get(r.testCaseId) : undefined;
+            return {
+                ...r,
+                inputData: tc?.inputData ?? null,
+                scoreWeight: tc?.scoreWeight ?? 1,
+                errorType: classifyErrorType(r.error, r.passed, r.durationMs),
+            };
+        });
+
+        // Derive automaticScore vs lecturerScore from ScoreAuditLog history (US-04 Score Display).
+        // automaticScore = score before any manual override (oldScore of first audit entry).
+        // lecturerScore  = the most recent override score (newScore of last audit entry).
+        // totalScore on submission is always the current official score.
+        const auditLogs = (submission as any).auditLogs ?? [];
+        const sortedAuditLogs = [...auditLogs].sort(
+            (a: any, b: any) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
+        );
+        const hasManualOverride = sortedAuditLogs.length > 0;
+        const automaticScore: number | null = hasManualOverride
+            ? (sortedAuditLogs[0]?.oldScore ?? null)
+            : (submission.totalScore ?? null);
+        const lecturerScore: number | null = hasManualOverride
+            ? (sortedAuditLogs[sortedAuditLogs.length - 1]?.newScore ?? null)
+            : null;
+
         const responseData = {
             ...submission,
-            testResults: parsedTestResults,
+            testResults: enrichedTestResults,
+            automaticScore,
+            lecturerScore,
+            // totalScore is always the latest official score (already in submission)
             plagiarismMatches1: isStudent
                 ? sanitizePlagiarismForStudent(submission.plagiarismMatches1)
                 : submission.plagiarismMatches1,
