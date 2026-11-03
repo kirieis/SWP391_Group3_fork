@@ -161,7 +161,7 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
             prisma.submission.findMany({
                 where: { assignmentId },
                 orderBy: { submittedAt: "desc" },
-                select: { id: true, studentId: true, totalScore: true, status: true, submittedAt: true },
+                select: { id: true, studentId: true, totalScore: true, automaticScore: true, manualScore: true, status: true, submittedAt: true },
             }),
         ]);
         const latestByStudent = new Map<string, typeof latestSubmissions[number]>();
@@ -178,6 +178,8 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
                 submissionId: submission?.id ?? null,
                 submissionStatus: submission?.status ?? "NOT_SUBMITTED",
                 score: submission?.totalScore ?? null,
+                automaticScore: submission?.automaticScore ?? null,
+                manualScore: submission?.manualScore ?? null,
                 submittedAt: submission?.submittedAt ?? null,
                 displayScore: submission?.totalScore != null ? Number(submission.totalScore.toFixed(2)) :
                     (Date.now() > new Date((result as any).assignment.deadline).getTime() && !submission ? "N/A" : null),

@@ -551,10 +551,13 @@ export async function processSubmission(
   }
 
   // ── Step 7: Compute final score and report completion ─────────────────
-  const rawScore =
-    sandboxResult.totalTests > 0
-      ? (sandboxResult.passedTests / sandboxResult.totalTests) * 10
-      : 0;
+  const detailedResults = sandboxResult.testResults ?? [];
+  const totalWeight = detailedResults.reduce((sum, result) => sum + Math.max(0, Number(result.scoreWeight) || 1), 0);
+  const passedWeight = detailedResults.reduce((sum, result) =>
+    sum + (result.passed ? Math.max(0, Number(result.scoreWeight) || 1) : 0), 0);
+  // Never infer a score from aggregate counts alone. A missing detailed result set
+  // means the sandbox did not provide verifiable per-test evidence, so award zero.
+  const rawScore = totalWeight > 0 ? (passedWeight / totalWeight) * 10 : 0;
   const totalScore = Math.round(rawScore * 100) / 100;
 
   const finalStatus = aiReviewPending ? "AI_REVIEW_PENDING" : "GRADED";
@@ -565,7 +568,12 @@ export async function processSubmission(
     progressPercent: 100,
     totalScore,
     testResults: sandboxResult.testResults,
-    aiFeedback: genaiResult?.feedback,
+    aiFeedback: [
+      genaiResult?.feedback,
+      totalWeight === 0
+        ? `Sandbox warning: no detailed test results were returned. Automatic score was set to 0. ${sandboxResult.errorMessage ?? "Check Sandbox configuration and test case setup."}`
+        : undefined,
+    ].filter(Boolean).join("\n\n") || undefined,
     aiCleanCodeScore: genaiResult?.cleanCodeScore,
     aiReviewPending,
     astSimilarityPercent: similarityPercent,

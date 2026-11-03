@@ -35,7 +35,8 @@ export const createAssignment = async (req: Request, res: Response) => {
                     create: testCases.map((tc: any) => ({
                         inputData: tc.inputData || "",
                         expectedOutput: tc.expectedOutput || "",
-                        scoreWeight: Number(tc.scoreWeight) || 1,
+                        scoreWeight: Math.max(1, Number(tc.scoreWeight) || 1),
+                        isHidden: tc.isHidden === true,
                     })),
                 },
             },
@@ -119,6 +120,7 @@ export const cloneAssignment = async (req: Request, res: Response) => {
                         inputData: tc.inputData,
                         expectedOutput: tc.expectedOutput,
                         scoreWeight: tc.scoreWeight,
+                        isHidden: tc.isHidden,
                     })),
                 },
             },
@@ -141,16 +143,30 @@ export const getAssignmentDetail = async (req: Request, res: Response) => {
     try {
         const { assignmentId } = req.params;
 
+        const isStudent = req.user?.role === "STUDENT";
         const assignment = await prisma.assignment.findUnique({
             where: { id: assignmentId },
             include: {
-                testCases: true,
+                // Students must never receive hidden test inputs or expected outputs.
+                testCases: isStudent ? { where: { isHidden: false } } : true,
                 class: true,
             },
         });
 
         if (!assignment) {
             return res.status(404).json({ success: false, message: "Assignment not found." });
+        }
+        if (req.user?.role === "LECTURER" && (assignment as any).class?.lecturerId !== req.user.userId) {
+            return res.status(403).json({ success: false, message: "You can only view assignments from your own classes." });
+        }
+        if (req.user?.role === "STUDENT") {
+            const enrollment = await prisma.classStudent.findUnique({
+                where: { classId_studentId: { classId: assignment.classId, studentId: req.user.userId } },
+                select: { status: true },
+            });
+            if (!enrollment || enrollment.status !== "ACTIVE") {
+                return res.status(403).json({ success: false, message: "You are not enrolled in this assignment's class." });
+            }
         }
 
         return res.json({ success: true, data: assignment });
@@ -176,6 +192,7 @@ export const getAssignmentForSandbox = async (req: Request, res: Response) => {
                         inputData: true,
                         expectedOutput: true,
                         scoreWeight: true,
+                        isHidden: true,
                     },
                 },
             },
@@ -334,5 +351,82 @@ export const markOverdueAssignment = async (req: Request, res: Response) => {
     } catch (error) {
         console.error("Error marking overdue assignment:", error);
         return res.status(500).json({ success: false, message: "Unable to classify students for the overdue assignment." });
+    }
+};
+
+
+// =========================================================================
+// Manual Review & Regrading - Lecturer: Get all student submissions for an assignment
+// =========================================================================
+
+// GET /assignments/:assignmentId/submissions
+// Returns all student submissions for a given assignment (Lecturer/Admin only).
+// Verifies the requesting lecturer owns the assignment's class (ADMIN bypasses).
+export const getAssignmentSubmissions = async (req: Request, res: Response) => {
+    try {
+        const { assignmentId } = req.params;
+        const user = req.user!;
+
+        // Fetch the assignment along with class info for ownership check
+        const assignment = await prisma.assignment.findUnique({
+            where: { id: assignmentId },
+            include: {
+                class: { select: { lecturerId: true, classCode: true } },
+            },
+        });
+
+        if (!assignment) {
+            return res.status(404).json({ success: false, message: "Assignment not found." });
+        }
+
+        // Lecturer can only see submissions for their own classes
+        if (user.role !== "ADMIN" && (assignment as any).class?.lecturerId !== user.userId) {
+            return res.status(403).json({ success: false, message: "You are not authorized to view submissions for this assignment." });
+        }
+
+        const submissions = await prisma.submission.findMany({
+            where: { assignmentId },
+            orderBy: { submittedAt: "desc" },
+            select: {
+                id: true,
+                status: true,
+                totalScore: true,
+                automaticScore: true,
+                manualScore: true,
+                submittedAt: true,
+                astCheckStatus: true,
+                student: {
+                    select: {
+                        user: { select: { fullName: true, email: true } },
+                    },
+                },
+            },
+        });
+
+        // Flatten student info for convenience
+        const data = submissions.map((s) => ({
+            id: s.id,
+            status: s.status,
+            totalScore: s.totalScore,
+            automaticScore: s.automaticScore,
+            manualScore: s.manualScore,
+            submittedAt: s.submittedAt,
+            astCheckStatus: s.astCheckStatus,
+            studentName: s.student?.user?.fullName ?? null,
+            studentEmail: s.student?.user?.email ?? null,
+        }));
+
+        return res.json({
+            success: true,
+            data: {
+                assignmentId,
+                assignmentTitle: assignment.title,
+                classCode: (assignment as any).class?.classCode ?? null,
+                submissions: data,
+            },
+        });
+    } catch (error) {
+        console.error("[getAssignmentSubmissions] Error:", error);
+        return res.status(500).json({ success: false, message: "Server error retrieving assignment submissions." });
     }
 };

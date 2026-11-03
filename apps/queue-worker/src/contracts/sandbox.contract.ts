@@ -32,6 +32,11 @@ export interface SandboxTestCaseResult {
   actualOutput: string;
   expectedOutput: string;
   durationMs: number;
+  inputData?: string;
+  scoreWeight?: number;
+  isHidden?: boolean;
+  status?: "PASSED" | "FAILED";
+  errorType?: "TIMEOUT" | "RUNTIME_ERROR" | "WRONG_ANSWER" | "EXECUTION_ERROR" | "MEMORY_LIMIT_EXCEEDED" | "SECURITY_VIOLATION";
   error?: string;
 }
 

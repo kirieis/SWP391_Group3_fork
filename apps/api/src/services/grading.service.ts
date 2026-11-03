@@ -13,6 +13,11 @@ interface TestCaseResult {
     actualOutput: string;
     expectedOutput: string;
     durationMs: number;
+    inputData?: string;
+    scoreWeight?: number;
+    isHidden?: boolean;
+    status?: "PASSED" | "FAILED";
+    errorType?: "TIMEOUT" | "RUNTIME_ERROR" | "WRONG_ANSWER" | "EXECUTION_ERROR";
     error?: string;
 }
 
@@ -96,9 +101,10 @@ export class GradingService {
                     where: { id: submissionId },
                     data: {
                         status: "COMPILATION_ERROR",
-                        totalScore: 0,
+                        automaticScore: 0,
                     },
                 });
+                await prisma.submission.updateMany({ where: { id: submissionId, manualScore: null }, data: { totalScore: 0 } });
                 emitGradingProgress({
                     submissionId,
                     step: "COMPLETE",
@@ -148,9 +154,10 @@ export class GradingService {
                     where: { id: submissionId },
                     data: {
                         status: "COMPILATION_ERROR",
-                        totalScore: 0,
+                        automaticScore: 0,
                     },
                 });
+                await prisma.submission.updateMany({ where: { id: submissionId, manualScore: null }, data: { totalScore: 0 } });
                 emitGradingProgress({
                     submissionId,
                     step: "COMPLETE",
@@ -197,9 +204,14 @@ export class GradingService {
                 testResults.push({
                     testCaseId: tc.id,
                     passed: tcResult.passed,
+                    status: tcResult.passed ? "PASSED" : "FAILED",
                     actualOutput: tcResult.actualOutput,
                     expectedOutput: tcResult.expectedOutput,
+                    inputData: tc.inputData || "",
+                    scoreWeight: weight,
+                    isHidden: Boolean((tc as any).isHidden),
                     durationMs: tcResult.durationMs,
+                    ...(tcResult.errorType ? { errorType: tcResult.errorType } : {}),
                     ...(!tcResult.passed && tcResult.error ? { error: tcResult.error } : {}),
                 });
 
@@ -233,6 +245,9 @@ export class GradingService {
             });
 
             let aiFeedbackText = this.generateCleanCodeFeedback(calculatedScore, passedCount, testCases.length);
+            if (testCases.length === 0) {
+                aiFeedbackText += "\n\nSandbox warning: no test cases are configured. Automatic score was set to 0.";
+            }
 
             // Step 6: COMPLETE (Finalize results)
             // Check if the submission's score was withheld due to DANGER-level plagiarism
@@ -247,10 +262,15 @@ export class GradingService {
                 where: { id: submissionId },
                 data: {
                     status: finalStatus,
-                    totalScore: calculatedScore,
+                    automaticScore: calculatedScore,
                     aiFeedback: aiFeedbackText,
                     testResults: JSON.stringify(testResults),
                 } as any,
+            });
+            // Preserve lecturer overrides even if the automatic pipeline finishes later.
+            await prisma.submission.updateMany({
+                where: { id: submissionId, manualScore: null },
+                data: { totalScore: calculatedScore },
             });
 
             emitGradingProgress({
@@ -374,14 +394,19 @@ export class GradingService {
                 }
 
                 let errorMsg: string | undefined = undefined;
+                let errorType: TestCaseResult["errorType"];
                 if (!passed) {
                     if (killed) {
+                        errorType = "TIMEOUT";
                         errorMsg = "Execution timed out after 5 seconds.";
                     } else if (child.exitCode !== 0) {
+                        errorType = "RUNTIME_ERROR";
                         errorMsg = stderr.trim() || `Process terminated with error code ${child.exitCode}.`;
                     } else if (stderr.trim()) {
+                        errorType = "EXECUTION_ERROR";
                         errorMsg = stderr.trim();
                     } else {
+                        errorType = "WRONG_ANSWER";
                         errorMsg = "Output mismatch: expected output did not match actual output.";
                     }
                 }
@@ -391,6 +416,7 @@ export class GradingService {
                     actualOutput: actual,
                     expectedOutput: expected,
                     durationMs,
+                    ...(errorType ? { errorType } : {}),
                     ...(errorMsg ? { error: errorMsg } : {}),
                 });
             });
@@ -402,6 +428,7 @@ export class GradingService {
                     actualOutput: stdout,
                     expectedOutput: expectedOutput.trim(),
                     durationMs: Date.now() - startTime,
+                    errorType: "EXECUTION_ERROR",
                     error: "Failed to start the Java process.",
                 });
             });
@@ -414,19 +441,9 @@ export class GradingService {
     private generateCleanCodeFeedback(score: number, passedTc: number, totalTc: number): string {
         const feedbackLines: string[] = [];
 
-        if (score >= 90) {
-            feedbackLines.push("[EXCELLENT] Source code executed flawlessly, passing all functional test cases.");
-            feedbackLines.push("- Optimal algorithmic structure with modular logic handling edge cases cleanly.");
-            feedbackLines.push("- Follows standard Java naming conventions and clean code practices.");
-        } else if (score >= 50) {
-            feedbackLines.push(`[FAIR] Submission passed ${passedTc}/${totalTc} test cases (${score}/100 points).`);
-            feedbackLines.push("- Some edge cases or standard output formatting do not fully match requirements.");
-            feedbackLines.push("- Recommendation: Review loop termination conditions and boundary value logic.");
-        } else {
-            feedbackLines.push(`[NEEDS IMPROVEMENT] Submission did not pass key test cases (${passedTc}/${totalTc} passed).`);
-            feedbackLines.push("- Please verify input stream reading (Scanner / BufferedReader) and exact output format.");
-            feedbackLines.push("- Check main class naming, algorithm logic, and edge case handling.");
-        }
+        feedbackLines.push(`[NEEDS IMPROVEMENT] Submission did not pass key test cases (${passedTc}/${totalTc} passed).`);
+        feedbackLines.push("- Please verify input stream reading (Scanner / BufferedReader) and exact output format.");
+        feedbackLines.push("- Check main class naming, algorithm logic, and edge case handling.");
 
         return feedbackLines.join("\n");
     }

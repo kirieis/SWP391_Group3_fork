@@ -73,6 +73,12 @@ router.patch("/appeal/:appealId/resolve", authenticateJWT, authorizeRole("LECTUR
 // Giảng viên xem danh sách khiếu nại chờ duyệt (US10)
 router.get("/appeals/pending", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), getPendingAppeals);
 
+// Lecturer manual review and regrading endpoints.
+router.get("/:submissionId/source", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), getSubmissionSourceCode);
+router.get("/:submissionId/download", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), downloadSubmissionZip);
+router.patch("/:submissionId/regrade", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), manualRegrade);
+router.get("/:submissionId/grade-history", authenticateJWT, getGradeHistory);
+
 // Endpoint nhận cập nhật tiến trình và điểm từ Sandbox/AST/Queue (Thống nhất với Phân hệ 2/4/5)
 router.patch("/:submissionId/result", requireInternalApiKey, updateSubmissionGradingResult);
 

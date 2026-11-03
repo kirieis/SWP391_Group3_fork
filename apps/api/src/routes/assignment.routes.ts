@@ -1,11 +1,13 @@
 import { Router } from "express";
-import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments, deleteAssignment, markOverdueAssignment } from "../controllers/assignment.controller.js";
+import { createAssignment, cloneAssignment, getAssignmentDetail, getAssignmentForSandbox, getAssignments, deleteAssignment, markOverdueAssignment, getAssignmentSubmissions } from "../controllers/assignment.controller.js";
 import { authenticateJWT, authorizeRole, requireInternalApiKey } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
 // Lấy danh sách bài tập (Sinh viên/Giảng viên)
 router.get("/", authenticateJWT, getAssignments);
+
+router.get("/:assignmentId/submissions", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), getAssignmentSubmissions);
 
 // Internal worker deadline sweep: classify active students without submissions.
 router.post("/:assignmentId/mark-overdue", requireInternalApiKey, markOverdueAssignment);

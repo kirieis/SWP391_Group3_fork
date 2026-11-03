@@ -212,24 +212,29 @@ export class MockSandboxClient implements ISandboxClient {
     const filePath = (request.fileRelativePath || "").toLowerCase();
     const subId = (request.submissionId || "").toLowerCase();
 
-    let outcome: SandboxOutcome = "PASSED";
-    let passedTests = 10;
-    const totalTests = 10;
-    let executionTimeMs = 1250;
-    let errorMessage: string | undefined;
+    // Mock mode must never silently award full marks to an arbitrary uploaded archive.
+    // A mock run does not execute student code; it returns zero tests unless a named fixture is used.
+    let outcome: SandboxOutcome = "FAILED";
+    let passedTests = 0;
+    let totalTests = 0;
+    let executionTimeMs = 0;
+    let errorMessage: string | undefined = "Mock Sandbox is enabled. Student code was not executed; no automatic score was awarded.";
 
     if (filePath.includes("timeout") || subId.includes("timeout")) {
       outcome = "TIMEOUT";
+      totalTests = 10;
       passedTests = 0;
       executionTimeMs = 30_000;
       errorMessage = "Execution exceeded time limit (30s)";
     } else if (filePath.includes("security_violation") || subId.includes("security_violation")) {
       outcome = "SECURITY_VIOLATION";
+      totalTests = 10;
       passedTests = 0;
       executionTimeMs = 150;
       errorMessage = "Forbidden system call detected: Runtime.exec()";
     } else if (filePath.includes("compilation_error") || subId.includes("compilation_error")) {
       outcome = "COMPILATION_ERROR";
+      totalTests = 10;
       passedTests = 0;
       executionTimeMs = 80;
       errorMessage =
@@ -245,14 +250,23 @@ export class MockSandboxClient implements ISandboxClient {
       subId.includes("wrong")
     ) {
       outcome = "FAILED";
+      totalTests = 10;
       passedTests = 0;
       executionTimeMs = 950;
       errorMessage = "Test cases failed: output does not match expected output.";
     } else if (filePath.includes("partial") || filePath.includes("half") || subId.includes("partial")) {
       outcome = "FAILED";
+      totalTests = 10;
       passedTests = 5;
       executionTimeMs = 1100;
       errorMessage = "5 out of 10 test cases failed.";
+    }
+ else if (filePath.includes("mock-pass") || subId.includes("mock-pass")) {
+      outcome = "PASSED";
+      totalTests = 10;
+      passedTests = 10;
+      executionTimeMs = 1250;
+      errorMessage = undefined;
     }
 
     const testResults: import("../../contracts/sandbox.contract.js").SandboxTestCaseResult[] =
@@ -267,6 +281,10 @@ export class MockSandboxClient implements ISandboxClient {
                 : `Incorrect output on test case ${idx + 1}`,
               expectedOutput: `Test case ${idx + 1} passed output`,
               durationMs: 40 + idx * 10,
+              scoreWeight: 1,
+              isHidden: false,
+              status: isPassed ? "PASSED" : "FAILED",
+              errorType: isPassed ? undefined : "WRONG_ANSWER",
               error: isPassed
                 ? undefined
                 : "Output mismatch: expected output did not match actual output",

@@ -12,6 +12,7 @@ export interface TestCaseInput {
   inputData?: string;
   expectedOutput?: string;
   scoreWeight?: number;
+  isHidden?: boolean;
 }
 
 export interface ExecutionJobRequest {
@@ -36,6 +37,11 @@ export interface TestCaseResult {
   actualOutput: string;
   expectedOutput: string;
   durationMs: number;
+  inputData?: string;
+  scoreWeight?: number;
+  isHidden?: boolean;
+  status?: "PASSED" | "FAILED";
+  errorType?: "TIMEOUT" | "RUNTIME_ERROR" | "WRONG_ANSWER" | "EXECUTION_ERROR" | "MEMORY_LIMIT_EXCEEDED" | "SECURITY_VIOLATION";
   error?: string;
 }
 
@@ -108,7 +114,8 @@ export class ExecutionService {
             id: tc.id,
             inputData: tc.inputData || '',
             expectedOutput: tc.expectedOutput || '',
-            scoreWeight: tc.scoreWeight || 1
+            scoreWeight: tc.scoreWeight || 1,
+            isHidden: Boolean(tc.isHidden),
           }));
         }
       }
@@ -275,13 +282,18 @@ export class ExecutionService {
       const overallDeadline = startTime + config.OVERALL_TIMEOUT_SEC * 1000;
 
       for (let i = 0; i < testCases.length; i++) {
+        const tc = testCases[i];
         if (Date.now() > overallDeadline) {
           outcome = 'TIMEOUT';
           errorMsg = `Overall execution exceeded limit of ${config.OVERALL_TIMEOUT_SEC} seconds.`;
+          testResults.push({
+            testCaseId: tc.id, passed: false, actualOutput: '', expectedOutput: tc.expectedOutput || '',
+            inputData: tc.inputData || '', scoreWeight: tc.scoreWeight || 1, isHidden: Boolean(tc.isHidden),
+            durationMs: 0, status: 'FAILED', errorType: 'TIMEOUT', error: 'Overall execution time limit exceeded',
+          });
           break;
         }
 
-        const tc = testCases[i];
         const runCmd = ['/bin/bash', '-c', `java -cp /workspace ${mainClass}`];
 
         const execResult = await container.exec({
@@ -300,6 +312,11 @@ export class ExecutionService {
             actualOutput: '',
             expectedOutput: tc.expectedOutput || '',
             durationMs: execResult.durationMs,
+            inputData: tc.inputData || '',
+            scoreWeight: tc.scoreWeight || 1,
+            isHidden: Boolean(tc.isHidden),
+            status: 'FAILED',
+            errorType: 'TIMEOUT',
             error: 'Time Limit Exceeded'
           });
           break;
@@ -310,6 +327,11 @@ export class ExecutionService {
           outcome = 'SECURITY_VIOLATION';
           securityAlert = 'Process terminated due to Out-Of-Memory (RAM limit 512MB exceeded)';
           errorMsg = securityAlert;
+          testResults.push({
+            testCaseId: tc.id, passed: false, actualOutput: sanitizeOutput(execResult.stdout || ''), expectedOutput: tc.expectedOutput || '',
+            inputData: tc.inputData || '', scoreWeight: tc.scoreWeight || 1, isHidden: Boolean(tc.isHidden),
+            durationMs: execResult.durationMs, status: 'FAILED', errorType: 'MEMORY_LIMIT_EXCEEDED', error: 'Memory limit exceeded (512 MB)',
+          });
           break;
         }
 
@@ -324,6 +346,11 @@ export class ExecutionService {
           outcome = 'SECURITY_VIOLATION';
           securityAlert = 'Process throttled by PIDs limit (Fork Bomb attack detected)';
           errorMsg = securityAlert;
+          testResults.push({
+            testCaseId: tc.id, passed: false, actualOutput: '', expectedOutput: tc.expectedOutput || '',
+            inputData: tc.inputData || '', scoreWeight: tc.scoreWeight || 1, isHidden: Boolean(tc.isHidden),
+            durationMs: execResult.durationMs, status: 'FAILED', errorType: 'SECURITY_VIOLATION', error: 'Execution blocked by sandbox security limits',
+          });
           break;
         }
 
@@ -335,6 +362,11 @@ export class ExecutionService {
           outcome = 'SECURITY_VIOLATION';
           securityAlert = 'Unauthorized attempt to access restricted host/kernel path';
           errorMsg = securityAlert;
+          testResults.push({
+            testCaseId: tc.id, passed: false, actualOutput: '', expectedOutput: tc.expectedOutput || '',
+            inputData: tc.inputData || '', scoreWeight: tc.scoreWeight || 1, isHidden: Boolean(tc.isHidden),
+            durationMs: execResult.durationMs, status: 'FAILED', errorType: 'SECURITY_VIOLATION', error: 'Execution blocked by sandbox security limits',
+          });
           break;
         }
 
@@ -350,9 +382,9 @@ export class ExecutionService {
 
         const actual = normalize(execResult.stdout || '');
         const expected = normalize(tc.expectedOutput || '');
-        let passed = actual === expected;
+        let passed = execResult.exitCode === 0 && actual === expected;
 
-        if (!passed && expected.length > 0) {
+        if (!passed && execResult.exitCode === 0 && expected.length > 0) {
           const actualTokens = actual.split(/\s+/).filter(Boolean);
           const expectedTokens = expected.split(/\s+/).filter(Boolean);
           if (actualTokens.length === expectedTokens.length && actualTokens.length > 0) {
@@ -360,19 +392,23 @@ export class ExecutionService {
           }
         }
 
-        if (passed) {
-          passedTests++;
-        }
+        if (passed) passedTests++;
+        const errorType = passed ? undefined : execResult.exitCode !== 0 ? 'RUNTIME_ERROR' : 'WRONG_ANSWER';
 
         testResults.push({
           testCaseId: tc.id,
           passed,
+          status: passed ? 'PASSED' : 'FAILED',
           actualOutput: sanitizeOutput(actual),
           expectedOutput: expected,
+          inputData: tc.inputData || '',
+          scoreWeight: tc.scoreWeight || 1,
+          isHidden: Boolean(tc.isHidden),
           durationMs: execResult.durationMs,
+          ...(errorType ? { errorType } : {}),
           error: passed
             ? undefined
-            : sanitizeOutput(execResult.stderr) || 'Output mismatch: expected output did not match actual output.'
+            : sanitizeOutput(execResult.stderr) || (errorType === 'RUNTIME_ERROR' ? `Program exited with code ${execResult.exitCode}.` : 'Output mismatch: expected output did not match actual output.')
         });
       }
 
