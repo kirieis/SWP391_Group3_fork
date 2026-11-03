@@ -147,6 +147,7 @@ model TestCase {
   inputData      String?    @map("input_data") @db.NVarChar(Max)
   expectedOutput String?    @map("expected_output") @db.NVarChar(Max)
   scoreWeight    Int        @map("score_weight")
+  isHidden       Boolean    @default(false) @map("is_hidden")
 
   assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 
