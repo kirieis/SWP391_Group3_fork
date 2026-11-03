@@ -3,7 +3,8 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { prisma } from "../prisma.js";
-import { emitGradingProgress } from "../socket/index.js";
+import JSZip from "jszip";
+import { emitGradingProgress, getSocketServer } from "../socket/index.js";
 import { env } from "../config/env.js";
 import { astService } from "../services/ast.service.js";
 import { gradingService } from "../services/grading.service.js";
@@ -172,6 +173,8 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
                 // Plagiarism matches: fetch rồi lọc theo role bên dưới
                 plagiarismMatches1: true,
                 plagiarismMatches2: true,
+                // ScoreAuditLog: để phân biệt automaticScore vs lecturerScore (US-04)
+                auditLogs: { orderBy: { createdAt: "asc" } },
             },
         });
 
@@ -205,9 +208,93 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
             }
         }
 
+        /**
+         * Classify error type from grading engine output (US-04 Error Analysis)
+         * Returns one of: COMPILE_ERROR | RUNTIME_ERROR | TIMEOUT | MLE | WRONG_ANSWER | PASSED
+         */
+        const classifyErrorType = (
+            error: string | undefined,
+            passed: boolean,
+            durationMs?: number,
+        ): string => {
+            if (passed) return "PASSED";
+            if (!error) return "WRONG_ANSWER";
+            const e = error.toLowerCase();
+            // Timeout: exceeded time limit or SIGKILL
+            if (e.includes("sigkill") || e.includes("time limit") || (durationMs !== undefined && durationMs >= 5000)) {
+                return "TIMEOUT";
+            }
+            // Memory limit exceeded
+            if (e.includes("outofmemoryerror") || e.includes("memory limit") || e.includes("memoryerror")) {
+                return "MLE";
+            }
+            // Compile error: javac / python syntax / cs compile
+            if (
+                e.includes("error:") && (
+                    e.includes(".java:") || e.includes(".py:") || e.includes(".cs:") ||
+                    e.includes("syntaxerror") || e.includes("nameerror") || e.includes("indentationerror")
+                )
+            ) {
+                return "COMPILE_ERROR";
+            }
+            // Runtime exception
+            if (
+                e.includes("exception in thread") || e.includes("runtimeexception") ||
+                e.includes("nullpointerexception") || e.includes("arrayindexoutofbounds") ||
+                e.includes("stackoverflowerror") || e.includes("traceback (most recent call last)")
+            ) {
+                return "RUNTIME_ERROR";
+            }
+            // Fallback: treat any remaining "error:" as compile error
+            if (e.includes("error:")) return "COMPILE_ERROR";
+            return "WRONG_ANSWER";
+        };
+
+        // Build a lookup map: testCaseId -> { inputData, expectedOutput, scoreWeight }
+        const tcMap = new Map<string, { inputData?: string | null; expectedOutput?: string | null; scoreWeight: number }>(
+            (submission.assignment?.testCases ?? []).map((tc) => [
+                tc.id,
+                {
+                    inputData: tc.inputData,
+                    expectedOutput: tc.expectedOutput,
+                    scoreWeight: tc.scoreWeight,
+                },
+            ])
+        );
+
+        // Enrich each test result with inputData, scoreWeight and errorType (US-04)
+        const enrichedTestResults = (parsedTestResults as any[]).map((r) => {
+            const tc = r.testCaseId ? tcMap.get(r.testCaseId) : undefined;
+            return {
+                ...r,
+                inputData: tc?.inputData ?? null,
+                scoreWeight: tc?.scoreWeight ?? 1,
+                errorType: classifyErrorType(r.error, r.passed, r.durationMs),
+            };
+        });
+
+        // Derive automaticScore vs lecturerScore from ScoreAuditLog history (US-04 Score Display).
+        // automaticScore = score before any manual override (oldScore of first audit entry).
+        // lecturerScore  = the most recent override score (newScore of last audit entry).
+        // totalScore on submission is always the current official score.
+        const auditLogs = (submission as any).auditLogs ?? [];
+        const sortedAuditLogs = [...auditLogs].sort(
+            (a: any, b: any) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
+        );
+        const hasManualOverride = sortedAuditLogs.length > 0;
+        const automaticScore: number | null = hasManualOverride
+            ? (sortedAuditLogs[0]?.oldScore ?? null)
+            : (submission.totalScore ?? null);
+        const lecturerScore: number | null = hasManualOverride
+            ? (sortedAuditLogs[sortedAuditLogs.length - 1]?.newScore ?? null)
+            : null;
+
         const responseData = {
             ...submission,
-            testResults: parsedTestResults,
+            testResults: enrichedTestResults,
+            automaticScore,
+            lecturerScore,
+            // totalScore is always the latest official score (already in submission)
             plagiarismMatches1: isStudent
                 ? sanitizePlagiarismForStudent(submission.plagiarismMatches1)
                 : submission.plagiarismMatches1,
@@ -435,5 +522,283 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
     } catch (error) {
         console.error("[updateSubmissionGradingResult] Error:", error);
         return res.status(500).json({ success: false, message: "Server error updating submission result." });
+    }
+};
+
+// =========================================================================
+// Member 1 - Manual Review & Regrading APIs
+// =========================================================================
+
+// Helper: Determine language from file extension
+function getLanguageFromExt(ext: string): string {
+    const map: Record<string, string> = {
+        ".java": "java",
+        ".py": "python",
+        ".cs": "csharp",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".cpp": "cpp",
+        ".c": "c",
+    };
+    return map[ext] ?? "text";
+}
+
+// Allowed source file extensions (text-based, readable)
+const ALLOWED_EXTENSIONS = new Set([
+    ".java", ".py", ".cs", ".js", ".ts", ".cpp", ".c", ".h",
+    ".txt", ".md", ".json", ".xml", ".html", ".css",
+]);
+
+// Helper: Verify that the requesting lecturer owns the assignment's class.
+// ADMIN bypasses this check (always returns true).
+async function verifyLecturerOwnership(
+    submissionId: string,
+    userId: string,
+    role: string
+): Promise<{ allowed: boolean; submission: any | null; error?: string }> {
+    const submission = await prisma.submission.findUnique({
+        where: { id: submissionId },
+        include: {
+            assignment: {
+                include: {
+                    class: { select: { lecturerId: true } },
+                },
+            },
+            student: {
+                include: { user: { select: { fullName: true, email: true } } },
+            },
+        },
+    });
+
+    if (!submission) {
+        return { allowed: false, submission: null, error: "Submission not found." };
+    }
+
+    if (role !== "ADMIN") {
+        const lecturerId = submission.assignment?.class?.lecturerId;
+        if (lecturerId !== userId) {
+            return {
+                allowed: false,
+                submission,
+                error: "You are not authorized to access this submission.",
+            };
+        }
+    }
+
+    return { allowed: true, submission };
+}
+
+// 6. View source code files inside a submission ZIP (Manual Review - Task 1)
+export const getSubmissionSourceCode = async (req: Request, res: Response) => {
+    try {
+        const { submissionId } = req.params;
+        const user = req.user!;
+
+        const { allowed, submission, error } = await verifyLecturerOwnership(
+            submissionId,
+            user.userId,
+            user.role
+        );
+
+        if (!allowed || !submission) {
+            return res.status(submission ? 403 : 404).json({ success: false, message: error });
+        }
+
+        if (!submission.fileUrl) {
+            return res.status(404).json({ success: false, message: "No file associated with this submission." });
+        }
+
+        const uploadRoot = path.resolve(process.cwd(), "uploads", "submissions");
+        const absolutePath = path.resolve(process.cwd(), submission.fileUrl.replace(/^\//, ""));
+        if (!absolutePath.startsWith(uploadRoot + path.sep) || !fs.existsSync(absolutePath)) {
+            return res.status(404).json({ success: false, message: "Submission file not found on server." });
+        }
+
+        const zipBuffer = fs.readFileSync(absolutePath);
+        const zip = await JSZip.loadAsync(zipBuffer);
+
+        const files: { name: string; path: string; content: string; language: string }[] = [];
+
+        for (const [filePath, zipEntry] of Object.entries(zip.files)) {
+            if (zipEntry.dir) continue;
+
+            const ext = path.extname(filePath).toLowerCase();
+            if (!ALLOWED_EXTENSIONS.has(ext)) continue;
+
+            // Skip binary or oversized files (> 100KB)
+            const fileData = await zipEntry.async("nodebuffer");
+            if (fileData.byteLength > 100 * 1024) continue;
+
+            // Skip non-UTF-8 text (heuristic: check for null bytes)
+            if (fileData.includes(0x00)) continue;
+
+            const content = fileData.toString("utf-8");
+            const name = path.basename(filePath);
+            const language = getLanguageFromExt(ext);
+
+            files.push({ name, path: filePath, content, language });
+        }
+
+        const studentName = submission.student?.user?.fullName ?? "Unknown";
+
+        return res.json({
+            success: true,
+            data: {
+                submissionId,
+                studentName,
+                files,
+            },
+        });
+    } catch (error) {
+        console.error("[getSubmissionSourceCode] Error:", error);
+        return res.status(500).json({ success: false, message: "Server error reading submission source code." });
+    }
+};
+
+// 7. Download the raw submission ZIP file (Task 2)
+export const downloadSubmissionZip = async (req: Request, res: Response) => {
+    try {
+        const { submissionId } = req.params;
+        const user = req.user!;
+
+        const { allowed, submission, error } = await verifyLecturerOwnership(
+            submissionId,
+            user.userId,
+            user.role
+        );
+
+        if (!allowed || !submission) {
+            return res.status(submission ? 403 : 404).json({ success: false, message: error });
+        }
+
+        if (!submission.fileUrl) {
+            return res.status(404).json({ success: false, message: "No file associated with this submission." });
+        }
+
+        const uploadRoot = path.resolve(process.cwd(), "uploads", "submissions");
+        const absolutePath = path.resolve(process.cwd(), submission.fileUrl.replace(/^\//, ""));
+        if (!absolutePath.startsWith(uploadRoot + path.sep) || !fs.existsSync(absolutePath)) {
+            return res.status(404).json({ success: false, message: "Submission file not found on server." });
+        }
+
+        return res.download(absolutePath, "submission.zip");
+    } catch (error) {
+        console.error("[downloadSubmissionZip] Error:", error);
+        return res.status(500).json({ success: false, message: "Server error downloading submission." });
+    }
+};
+
+// 8. Manually regrade a submission (override AI/Sandbox score) — Task 3 & Risk R03
+export const manualRegrade = async (req: Request, res: Response) => {
+    try {
+        const { submissionId } = req.params;
+        const user = req.user!;
+        const { newScore, reason } = req.body;
+
+        // Validate input
+        if (newScore === undefined || newScore === null) {
+            return res.status(400).json({ success: false, message: "newScore is required." });
+        }
+        const scoreNum = Number(newScore);
+        if (!Number.isFinite(scoreNum) || scoreNum < 0 || scoreNum > 10) {
+            return res.status(400).json({ success: false, message: "newScore must be a number between 0 and 10." });
+        }
+        if (!reason || String(reason).trim() === "") {
+            return res.status(400).json({ success: false, message: "reason is required." });
+        }
+
+        const { allowed, submission, error } = await verifyLecturerOwnership(
+            submissionId,
+            user.userId,
+            user.role
+        );
+
+        if (!allowed || !submission) {
+            return res.status(submission ? 403 : 404).json({ success: false, message: error });
+        }
+
+        let oldScore: number | null = null;
+
+        await prisma.$transaction(async (tx) => {
+            const current = await tx.submission.findUnique({
+                where: { id: submissionId },
+                select: { totalScore: true },
+            });
+            oldScore = current?.totalScore ?? null;
+
+            await tx.submission.update({
+                where: { id: submissionId },
+                data: { manualScore: scoreNum, totalScore: scoreNum },
+            });
+
+            await tx.scoreAuditLog.create({
+                data: {
+                    submissionId,
+                    editorId: user.userId,
+                    oldScore,
+                    newScore: scoreNum,
+                    reason: String(reason).trim(),
+                },
+            });
+        });
+
+        // Emit WebSocket event to clients watching this submission (Task 5)
+        getSocketServer()
+            ?.to(`submission_${submissionId}`)
+            .emit("score_updated", { submissionId, newScore: scoreNum, oldScore });
+
+        return res.json({
+            success: true,
+            message: "Score updated successfully.",
+            data: { submissionId, oldScore, newScore: scoreNum },
+        });
+    } catch (error) {
+        console.error("[manualRegrade] Error:", error);
+        return res.status(500).json({ success: false, message: "Server error updating score." });
+    }
+};
+
+// 9. Get score audit / grade history for a submission (Task 4)
+export const getGradeHistory = async (req: Request, res: Response) => {
+    try {
+        const { submissionId } = req.params;
+        const user = req.user!;
+
+        // STUDENT can only view their own submission history
+        if (user.role === "STUDENT") {
+            const submission = await prisma.submission.findUnique({
+                where: { id: submissionId },
+                select: { studentId: true },
+            });
+            if (!submission) {
+                return res.status(404).json({ success: false, message: "Submission not found." });
+            }
+            if (submission.studentId !== user.userId) {
+                return res.status(403).json({ success: false, message: "You are not authorized to view this grade history." });
+            }
+        } else {
+            // LECTURER/ADMIN: verify lecturer ownership
+            const { allowed, submission, error } = await verifyLecturerOwnership(
+                submissionId,
+                user.userId,
+                user.role
+            );
+            if (!allowed || !submission) {
+                return res.status(submission ? 403 : 404).json({ success: false, message: error });
+            }
+        }
+
+        const auditLogs = await prisma.scoreAuditLog.findMany({
+            where: { submissionId },
+            orderBy: { createdAt: "desc" },
+            include: {
+                editor: { select: { fullName: true, email: true } },
+            },
+        });
+
+        return res.json({ success: true, data: auditLogs });
+    } catch (error) {
+        console.error("[getGradeHistory] Error:", error);
+        return res.status(500).json({ success: false, message: "Server error retrieving grade history." });
     }
 };

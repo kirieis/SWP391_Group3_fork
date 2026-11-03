@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users,
   FileText,
+  Code2,
+  Download,
+  History,
+  Edit3,
   TrendingUp,
   AlertOctagon,
   PlusCircle,
@@ -144,6 +148,193 @@ export default function LecturerDashboardPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [expandedStudentList, setExpandedStudentList] = useState<boolean>(false);
+
+  // Member 1 - Manual Review & Regrading States
+  // Source Code Modal
+  const [sourceCodeModal, setSourceCodeModal] = useState<{
+    isOpen: boolean;
+    loading: boolean;
+    submissionId: string;
+    studentName: string;
+    files: { name: string; path: string; content: string; language: string }[];
+    selectedFileIdx: number;
+    error: string;
+  }>({
+    isOpen: false,
+    loading: false,
+    submissionId: '',
+    studentName: '',
+    files: [],
+    selectedFileIdx: 0,
+    error: '',
+  });
+
+  // Manual Regrade Modal
+  const [regradeModal, setRegradeModal] = useState<{
+    isOpen: boolean;
+    loading: boolean;
+    submissionId: string;
+    studentName: string;
+    currentScore: number | null;
+    newScore: string;
+    reason: string;
+    error: string;
+    confirmStep: boolean;
+  }>({
+    isOpen: false,
+    loading: false,
+    submissionId: '',
+    studentName: '',
+    currentScore: null,
+    newScore: '',
+    reason: '',
+    error: '',
+    confirmStep: false,
+  });
+
+  // Grade History Modal
+  const [historyModal, setHistoryModal] = useState<{
+    isOpen: boolean;
+    loading: boolean;
+    submissionId: string;
+    studentName: string;
+    logs: { id: string; oldScore: number | null; newScore: number; reason: string; createdAt: string; editor?: { fullName?: string } }[];
+    error: string;
+  }>({
+    isOpen: false,
+    loading: false,
+    submissionId: '',
+    studentName: '',
+    logs: [],
+    error: '',
+  });
+
+  // Downloading State
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Handlers for Member 1 actions
+  const handleOpenSourceCode = async (subId: string, studentName: string) => {
+    setSourceCodeModal({
+      isOpen: true,
+      loading: true,
+      submissionId: subId,
+      studentName,
+      files: [],
+      selectedFileIdx: 0,
+      error: '',
+    });
+    const res = await apiRequest<{ submissionId: string; studentName: string; files: any[] }>(`/submissions/${subId}/source-code`);
+    if (res.success && res.data) {
+      setSourceCodeModal((prev) => ({
+        ...prev,
+        loading: false,
+        files: res.data?.files || [],
+        selectedFileIdx: 0,
+      }));
+    } else {
+      setSourceCodeModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: res.message || 'Unable to load submission source code.',
+      }));
+    }
+  };
+
+  const handleDownloadZip = async (subId: string) => {
+    try {
+      setDownloadingId(subId);
+      const token = localStorage.getItem('aita_token') || '';
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+      const res = await fetch(`${apiUrl}/submissions/${subId}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        throw new Error('Download failed. You may not have permission or file is missing.');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `submission_${subId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || 'Error downloading submission ZIP.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleOpenRegrade = (subId: string, studentName: string, currentScore: number | null) => {
+    setRegradeModal({
+      isOpen: true,
+      loading: false,
+      submissionId: subId,
+      studentName,
+      currentScore,
+      newScore: currentScore != null ? String(currentScore) : '',
+      reason: '',
+      error: '',
+      confirmStep: false,
+    });
+  };
+
+  const handleSubmitRegrade = async () => {
+    const scoreNum = parseFloat(regradeModal.newScore);
+    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 10) {
+      setRegradeModal((prev) => ({ ...prev, error: 'Score must be a number between 0 and 10.' }));
+      return;
+    }
+    if (!regradeModal.reason.trim()) {
+      setRegradeModal((prev) => ({ ...prev, error: 'Please enter a reason for regrading.' }));
+      return;
+    }
+
+    setRegradeModal((prev) => ({ ...prev, loading: true, error: '' }));
+    const res = await apiRequest(`/submissions/${regradeModal.submissionId}/manual-regrade`, {
+      method: 'POST',
+      body: JSON.stringify({
+        newScore: scoreNum,
+        reason: regradeModal.reason.trim(),
+      }),
+    });
+    if (res.success) {
+      setRegradeModal((prev) => ({ ...prev, isOpen: false, loading: false }));
+      // Reload analytics to reflect new score
+      if (selectedAssignmentId) {
+        loadAnalytics(selectedAssignmentId);
+      }
+    } else {
+      setRegradeModal((prev) => ({ ...prev, loading: false, error: res.message || 'Error saving new score.' }));
+    }
+  };
+
+  const handleOpenHistory = async (subId: string, studentName: string) => {
+    setHistoryModal({
+      isOpen: true,
+      loading: true,
+      submissionId: subId,
+      studentName,
+      logs: [],
+      error: '',
+    });
+    const res = await apiRequest<any[]>(`/submissions/${subId}/grade-history`);
+    if (res.success && res.data) {
+      setHistoryModal((prev) => ({
+        ...prev,
+        loading: false,
+        logs: res.data || [],
+      }));
+    } else {
+      setHistoryModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: res.message || 'Unable to retrieve grade history.',
+      }));
+    }
+  };
   const [studentSearch, setStudentSearch] = useState<string>('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentDeleteLoading, setStudentDeleteLoading] = useState<boolean>(false);
@@ -1107,7 +1298,7 @@ export default function LecturerDashboardPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead><tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                      <th className="py-3 px-3">Student ID</th><th className="py-3 px-3">Student name</th><th className="py-3 px-3 text-center">Submission status</th><th className="py-3 px-3 text-center">Score</th><th className="py-3 px-3">Submitted at</th>
+                      <th className="py-3 px-3">Student ID</th><th className="py-3 px-3">Student name</th><th className="py-3 px-3 text-center">Submission status</th><th className="py-3 px-3 text-center">Score</th><th className="py-3 px-3">Submitted at</th><th className="py-3 px-3 text-right">Actions</th>
                     </tr></thead>
                     <tbody className="divide-y divide-slate-100">
                       {(analytics.studentScores ?? []).map((student) => <tr key={student.studentId} className="hover:bg-slate-50">
@@ -1116,8 +1307,53 @@ export default function LecturerDashboardPage() {
                         <td className="py-3 px-3 text-center"><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${student.submissionStatus === 'NOT_SUBMITTED' ? 'bg-slate-100 text-slate-600' : student.submissionStatus === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{student.submissionStatus === 'NOT_SUBMITTED' ? 'Not submitted' : student.submissionStatus}</span></td>
                         <td className="py-3 px-3 text-center font-bold text-slate-900">{student.displayScore === 'N/A' ? <span className="text-slate-500">N/A</span> : student.score != null ? student.score.toFixed(2) : <span className="text-slate-400">Pending</span>}</td>
                         <td className="py-3 px-3 text-slate-500">{student.submittedAt ? new Date(student.submittedAt).toLocaleString() : '—'}</td>
+                        <td className="py-3 px-3 text-right">
+                          {student.submissionId ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Task 1: View Source Code */}
+                              <button
+                                type="button"
+                                title="View source code"
+                                onClick={() => handleOpenSourceCode(student.submissionId!, student.fullName)}
+                                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 text-slate-600 transition shadow-sm"
+                              >
+                                <Code2 size={13} />
+                              </button>
+                              {/* Task 2: Download ZIP */}
+                              <button
+                                type="button"
+                                title="Download submission ZIP"
+                                disabled={downloadingId === student.submissionId}
+                                onClick={() => handleDownloadZip(student.submissionId!)}
+                                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:text-slate-900 text-slate-600 transition shadow-sm disabled:opacity-50"
+                              >
+                                {downloadingId === student.submissionId ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                              </button>
+                              {/* Task 3: Manual Regrade */}
+                              <button
+                                type="button"
+                                title="Manual regrade"
+                                onClick={() => handleOpenRegrade(student.submissionId!, student.fullName, student.score)}
+                                className="p-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 transition shadow-sm"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              {/* Task 4: Grade History */}
+                              <button
+                                type="button"
+                                title="View grade history"
+                                onClick={() => handleOpenHistory(student.submissionId!, student.fullName)}
+                                className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 transition shadow-sm"
+                              >
+                                <History size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-300 italic">No submission</span>
+                          )}
+                        </td>
                       </tr>)}
-                      {(analytics.studentScores ?? []).length === 0 && <tr><td colSpan={5} className="py-8 text-center text-slate-500">No active students in this class.</td></tr>}
+                      {(analytics.studentScores ?? []).length === 0 && <tr><td colSpan={6} className="py-8 text-center text-slate-500">No active students in this class.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -1954,6 +2190,279 @@ export default function LecturerDashboardPage() {
               >
                 {resolving ? <Loader2 size={13} className="animate-spin" /> : null}
                 <span>{resolveStatus === 'RESOLVED' ? 'Confirm update' : 'Confirm rejection'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* Member 1 Modals: Source Code Viewer, Manual Regrade, Grade History        */}
+      {/* ========================================================================= */}
+
+      {/* Modal 1: View Source Code (Task 1) */}
+      {sourceCodeModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl h-[82vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Code2 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Submission Source Code Viewer</h3>
+                  <p className="text-[11px] text-slate-500">Student: {sourceCodeModal.studentName} · Read-only inspector</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSourceCodeModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            {sourceCodeModal.loading ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
+                <Loader2 size={24} className="animate-spin text-indigo-600" />
+                <span>Extracting and parsing ZIP files...</span>
+              </div>
+            ) : sourceCodeModal.error ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                <AlertCircle size={28} className="text-rose-500 mb-2" />
+                <p className="text-xs font-semibold text-slate-800">{sourceCodeModal.error}</p>
+              </div>
+            ) : sourceCodeModal.files.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-xs text-slate-400">
+                No readable source code files found in this submission ZIP.
+              </div>
+            ) : (
+              <div className="flex-1 flex min-h-0">
+                {/* File list tree (Left pane) */}
+                <div className="w-64 border-r border-slate-200 overflow-y-auto bg-slate-50/50 p-2 space-y-1">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">Files in ZIP ({sourceCodeModal.files.length})</div>
+                  {sourceCodeModal.files.map((file, idx) => (
+                    <button
+                      key={file.path}
+                      type="button"
+                      onClick={() => setSourceCodeModal((prev) => ({ ...prev, selectedFileIdx: idx }))}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono truncate transition flex items-center gap-2 ${
+                        sourceCodeModal.selectedFileIdx === idx
+                          ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <FileText size={13} className="shrink-0" />
+                      <span className="truncate">{file.path}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Code view (Right pane) */}
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-900 text-slate-100">
+                  <div className="px-4 py-2 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-300 truncate">{sourceCodeModal.files[sourceCodeModal.selectedFileIdx]?.path}</span>
+                    <span className="text-[10px] uppercase bg-slate-700 px-2 py-0.5 rounded text-slate-300">
+                      {sourceCodeModal.files[sourceCodeModal.selectedFileIdx]?.language}
+                    </span>
+                  </div>
+                  <pre className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed select-text">
+                    <code>{sourceCodeModal.files[sourceCodeModal.selectedFileIdx]?.content}</code>
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Manual Regrade (Task 3) */}
+      {regradeModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
+                  <Edit3 size={18} />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Manual Regrade</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRegradeModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Manually override score for student: <strong className="text-slate-800">{regradeModal.studentName}</strong>. This update will be recorded in the official audit log.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px]">Current Official Score</span>
+                <span className="text-lg font-bold text-slate-800">
+                  {regradeModal.currentScore != null ? regradeModal.currentScore.toFixed(2) : 'N/A'}
+                </span>
+                <span className="text-[10px] text-slate-400 block">/ 10</span>
+              </div>
+              <div>
+                <label className="text-slate-700 block text-[10px] font-bold mb-1">New Score (0 - 10) *</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="10"
+                  value={regradeModal.newScore}
+                  onChange={(e) => setRegradeModal((prev) => ({ ...prev, newScore: e.target.value, error: '' }))}
+                  placeholder="e.g. 8.5"
+                  className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1">Reason for Regrading *</label>
+              <textarea
+                rows={3}
+                value={regradeModal.reason}
+                onChange={(e) => setRegradeModal((prev) => ({ ...prev, reason: e.target.value, error: '' }))}
+                placeholder="Explain why you are adjusting the score (e.g., Code logic is sound despite edge case timeout, appeal accepted)..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            {regradeModal.error && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>{regradeModal.error}</span>
+              </div>
+            )}
+
+            {/* Confirmation step */}
+            {regradeModal.confirmStep ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
+                <p className="text-xs font-bold text-amber-900">Are you sure you want to finalize this score change?</p>
+                <p className="text-[11px] text-amber-700">
+                  The score will be updated to <strong>{parseFloat(regradeModal.newScore).toFixed(2)}/10</strong> and the student will be notified immediately.
+                </p>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setRegradeModal((prev) => ({ ...prev, confirmStep: false }))}
+                    className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={regradeModal.loading}
+                    onClick={handleSubmitRegrade}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-xs flex items-center gap-1.5"
+                  >
+                    {regradeModal.loading && <Loader2 size={12} className="animate-spin" />}
+                    <span>Confirm & Save</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRegradeModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const scoreNum = parseFloat(regradeModal.newScore);
+                    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > 10) {
+                      setRegradeModal((prev) => ({ ...prev, error: 'Score must be a number between 0 and 10.' }));
+                      return;
+                    }
+                    if (!regradeModal.reason.trim()) {
+                      setRegradeModal((prev) => ({ ...prev, error: 'Please enter a reason for regrading.' }));
+                      return;
+                    }
+                    setRegradeModal((prev) => ({ ...prev, confirmStep: true, error: '' }));
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold"
+                >
+                  Proceed to Confirm
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Grade History (Task 4) */}
+      {historyModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-slate-100 text-slate-700 rounded-lg">
+                  <History size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Score Audit History</h3>
+                  <p className="text-[11px] text-slate-500">Student: {historyModal.studentName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHistoryModal((prev) => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {historyModal.loading ? (
+              <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-500">
+                <Loader2 size={20} className="animate-spin text-indigo-600" />
+                <span>Loading audit trail...</span>
+              </div>
+            ) : historyModal.logs.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                No manual score adjustments recorded for this submission yet.
+              </div>
+            ) : (
+              <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                {historyModal.logs.map((log) => (
+                  <div key={log.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">
+                        {log.oldScore != null ? log.oldScore.toFixed(2) : 'Initial'} → <span className="text-emerald-600">{log.newScore.toFixed(2)}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {new Date(log.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-slate-600 italic text-[11px]">"{log.reason}"</p>
+                    <div className="text-[10px] text-slate-400">
+                      Modified by: <span className="font-semibold text-slate-600">{log.editor?.fullName || 'Lecturer'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setHistoryModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+              >
+                Close
               </button>
             </div>
           </div>

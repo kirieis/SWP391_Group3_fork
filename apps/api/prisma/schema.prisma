@@ -163,7 +163,9 @@ model Submission {
   fileUrl      String            @map("file_url")
   fileHash     String?           @map("file_hash") // SHA-256
   status       String            // "PENDING", "RUNNING_TESTS", "COMPLETED", "SCORE_WITHHELD", "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION", "FAILED"
-  totalScore   Float?            @map("total_score")
+  totalScore     Float?            @map("total_score")
+  automaticScore Float?            @map("automatic_score")
+  manualScore    Float?            @map("manual_score")
   aiFeedback   String?           @map("ai_feedback") @db.NVarChar(Max)
   testResults  String?           @map("test_results") @db.NVarChar(Max) // JSON chi tiết kết quả từng test case
   submittedAt  DateTime          @default(now()) @map("submitted_at")

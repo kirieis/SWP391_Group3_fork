@@ -35,21 +35,30 @@ interface PlagiarismMatch {
   [key: string]: unknown;
 }
 
+// Error type từ backend classifyErrorType (US-04)
+type ErrorType = 'PASSED' | 'WRONG_ANSWER' | 'COMPILE_ERROR' | 'RUNTIME_ERROR' | 'TIMEOUT' | 'MLE';
+
 interface TestCaseResult {
   testCaseId?: string;
   passed: boolean;
   actualOutput?: string;
   expectedOutput?: string;
+  inputData?: string | null;
   durationMs?: number;
   error?: string;
+  errorType?: ErrorType;
+  scoreWeight?: number;
 }
 
 // Kiểu submission từ backend
+// US-04: bổ sung automaticScore và lecturerScore
 interface SubmissionData {
   id?: string;
   status?: string;
   astCheckStatus?: string;
   totalScore?: number | null;
+  automaticScore?: number | null;
+  lecturerScore?: number | null;
   aiFeedback?: string | null;
   testResults?: TestCaseResult[];
   assignment?: {
@@ -61,6 +70,331 @@ interface SubmissionData {
   [key: string]: unknown;
 }
 
+// =============================================================================
+// US-04: DetailedTestResults Component
+// Hiển thị danh sách test case chi tiết với diff view, error classification,
+// và score breakdown (Automatic / Lecturer / Official)
+// =============================================================================
+
+// Helper: phân loại error badge style
+function getErrorBadgeStyle(errorType: string | undefined, passed: boolean) {
+  if (passed || errorType === 'PASSED') return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', label: 'PASSED' };
+  switch (errorType) {
+    case 'COMPILE_ERROR': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', label: 'COMPILE ERROR' };
+    case 'RUNTIME_ERROR': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', label: 'RUNTIME ERROR' };
+    case 'TIMEOUT':       return { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  label: 'TIMEOUT' };
+    case 'MLE':           return { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    label: 'MEM LIMIT' };
+    case 'WRONG_ANSWER':
+    default:              return { bg: 'bg-rose-50',   text: 'text-rose-700',   border: 'border-rose-200',   label: 'WRONG ANSWER' };
+  }
+}
+
+// Helper: diff line-by-line, trả về mảng {line, type: 'equal'|'expected'|'actual'}
+function computeDiff(expected: string, actual: string) {
+  const expLines = expected.split('\n');
+  const actLines = actual.split('\n');
+  const maxLen = Math.max(expLines.length, actLines.length);
+  const result: { exp: string | null; act: string | null; match: boolean }[] = [];
+  for (let i = 0; i < maxLen; i++) {
+    const e = expLines[i] ?? null;
+    const a = actLines[i] ?? null;
+    result.push({ exp: e, act: a, match: e === a });
+  }
+  return result;
+}
+
+interface DetailedTestResultsProps {
+  testResults: TestCaseResult[];
+  isPending: boolean;
+  automaticScore?: number | null;
+  lecturerScore?: number | null;
+  totalScore?: number | null;
+  isScoreWithheld: boolean;
+}
+
+function DetailedTestResults({
+  testResults,
+  isPending,
+  automaticScore,
+  lecturerScore,
+  totalScore,
+  isScoreWithheld,
+}: DetailedTestResultsProps) {
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [showDiff, setShowDiff] = useState<Record<number, boolean>>({});
+
+  const passedCount = testResults.filter((r) => r.passed).length;
+  const totalWeight = testResults.reduce((sum, r) => sum + (r.scoreWeight ?? 1), 0);
+  const passedWeight = testResults.filter((r) => r.passed).reduce((sum, r) => sum + (r.scoreWeight ?? 1), 0);
+
+  const normalizeScore = (s: number | null | undefined): string => {
+    if (s === null || s === undefined) return '---';
+    const n = Number(s);
+    // Nếu score > 10, chuẩn hóa về thang 10 (legacy: một số nơi lưu thang 100)
+    return (n > 10 ? n / 10 : n).toFixed(1);
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="p-5 border-b border-slate-100">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+              <CheckCircle2 size={18} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900 text-sm">Detailed Test Results</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {isPending ? 'Grading in progress...' : `${passedCount} / ${testResults.length} test cases passed`}
+              </p>
+            </div>
+          </div>
+          {/* Pass rate bar */}
+          {!isPending && testResults.length > 0 && (
+            <div className="flex items-center gap-2">
+              <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${(passedCount / testResults.length) * 100}%` }}
+                />
+              </div>
+              <span className="text-xs font-semibold text-slate-600">
+                {Math.round((passedCount / testResults.length) * 100)}%
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Test Case List */}
+      <div className="divide-y divide-slate-100">
+        {testResults.map((result, idx) => {
+          const badge = getErrorBadgeStyle(result.errorType, result.passed);
+          const isExpanded = expandedIdx === idx;
+          const isDiffShown = showDiff[idx] ?? false;
+          const hasExpectedAndActual =
+            result.expectedOutput !== undefined && result.expectedOutput !== null &&
+            result.actualOutput !== undefined && result.actualOutput !== null;
+          const diffLines = hasExpectedAndActual
+            ? computeDiff(result.expectedOutput ?? '', result.actualOutput ?? '')
+            : [];
+          const hasDiff = diffLines.some((d) => !d.match);
+
+          return (
+            <div key={result.testCaseId || idx}>
+              {/* Row header */}
+              <button
+                type="button"
+                onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                className="w-full px-5 py-3.5 flex items-center gap-3 hover:bg-slate-50 transition text-left"
+              >
+                {/* Status icon */}
+                {result.passed ? (
+                  <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                ) : result.errorType === 'TIMEOUT' ? (
+                  <Clock size={16} className="text-amber-500 shrink-0" />
+                ) : (
+                  <XCircle size={16} className="text-rose-500 shrink-0" />
+                )}
+
+                <span className="text-xs font-semibold text-slate-700 min-w-[90px]">
+                  Test Case #{idx + 1}
+                </span>
+
+                {/* Error badge */}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.bg} ${badge.text} ${badge.border}`}>
+                  {badge.label}
+                </span>
+
+                {/* Score weight */}
+                <span className="ml-auto text-[11px] text-slate-400 mr-2">
+                  Weight: {result.scoreWeight ?? 1} pt{(result.scoreWeight ?? 1) > 1 ? 's' : ''}
+                </span>
+
+                {/* Duration */}
+                {result.durationMs !== undefined && (
+                  <span className="text-[10px] text-slate-400 font-mono mr-2">{result.durationMs} ms</span>
+                )}
+
+                {isExpanded ? <ChevronUp size={14} className="text-slate-400 shrink-0" /> : <ChevronDown size={14} className="text-slate-400 shrink-0" />}
+              </button>
+
+              {/* Expanded detail */}
+              {isExpanded && (
+                <div className="bg-slate-50 border-t border-slate-100 p-5 space-y-4 text-xs">
+                  {/* Test Case ID */}
+                  {result.testCaseId && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 w-28 shrink-0">Test Case ID</span>
+                      <span className="font-mono text-indigo-600 break-all">{result.testCaseId}</span>
+                    </div>
+                  )}
+
+                  {/* Input */}
+                  {result.inputData !== null && result.inputData !== undefined && (
+                    <div>
+                      <span className="text-slate-400 block mb-1">Input</span>
+                      <pre className="bg-white border border-slate-200 rounded-xl p-3 font-mono text-[11px] text-slate-700 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                        {result.inputData || '(empty)'}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Expected vs Actual Output with optional diff */}
+                  {!result.passed && hasExpectedAndActual ? (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-slate-400">Output Comparison</span>
+                        {hasDiff && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setShowDiff((prev) => ({ ...prev, [idx]: !isDiffShown })); }}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium underline"
+                          >
+                            {isDiffShown ? 'Show side-by-side' : 'Show diff'}
+                          </button>
+                        )}
+                      </div>
+
+                      {isDiffShown ? (
+                        // Diff view: line by line highlight
+                        <div className="border border-slate-200 rounded-xl overflow-hidden font-mono text-[10px]">
+                          <div className="grid grid-cols-2 divide-x divide-slate-200">
+                            <div className="bg-emerald-50 px-2 py-1 text-emerald-700 font-semibold text-[10px]">Expected</div>
+                            <div className="bg-rose-50 px-2 py-1 text-rose-700 font-semibold text-[10px]">Actual</div>
+                          </div>
+                          <div className="max-h-48 overflow-y-auto">
+                            {diffLines.map((d, li) => (
+                              <div key={li} className="grid grid-cols-2 divide-x divide-slate-200">
+                                <div className={`px-2 py-0.5 whitespace-pre-wrap break-words ${d.match ? 'text-slate-600' : 'bg-emerald-50 text-emerald-800'}`}>
+                                  {d.exp ?? ''}
+                                </div>
+                                <div className={`px-2 py-0.5 whitespace-pre-wrap break-words ${d.match ? 'text-slate-600' : 'bg-rose-50 text-rose-800'}`}>
+                                  {d.act ?? ''}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        // Side-by-side plain view
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <span className="text-[10px] font-semibold text-emerald-600 block mb-1">Expected Output</span>
+                            <pre className="bg-white border border-emerald-200 rounded-xl p-3 text-[11px] text-slate-700 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                              {result.expectedOutput || '(empty)'}
+                            </pre>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-semibold text-rose-600 block mb-1">Actual Output</span>
+                            <pre className="bg-white border border-rose-200 rounded-xl p-3 text-[11px] text-slate-700 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                              {result.actualOutput || '(empty)'}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : result.passed ? (
+                    <div>
+                      <span className="text-slate-400 block mb-1">Actual Output</span>
+                      <pre className="bg-white border border-emerald-200 rounded-xl p-3 font-mono text-[11px] text-emerald-700 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                        {result.actualOutput || '(empty)'}
+                      </pre>
+                    </div>
+                  ) : null}
+
+                  {/* Error Message + Error Analysis */}
+                  {result.error && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <AlertCircle size={12} className="text-rose-500 shrink-0" />
+                        <span className="text-rose-600 font-semibold">Error Analysis</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${badge.bg} ${badge.text}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                      {/* User-friendly error explanation */}
+                      <div className="mb-2 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-[11px]">
+                        {result.errorType === 'COMPILE_ERROR' && '⚠️ Compilation failed — the code could not be compiled. Check syntax errors and missing imports.'}
+                        {result.errorType === 'RUNTIME_ERROR' && '💥 Runtime exception — the program crashed during execution. Check for null references, array bounds, or divide-by-zero.'}
+                        {result.errorType === 'TIMEOUT' && '⏱️ Time Limit Exceeded — the program ran longer than the allowed time limit. Check for infinite loops or slow algorithms.'}
+                        {result.errorType === 'MLE' && '💾 Memory Limit Exceeded — the program consumed more memory than allowed. Check for memory leaks or oversized data structures.'}
+                        {result.errorType === 'WRONG_ANSWER' && '❌ Wrong Answer — output does not match expected. Check your logic and edge cases.'}
+                      </div>
+                      <pre className="bg-white border border-rose-200 rounded-xl p-3 font-mono text-[10px] text-rose-800 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                        {result.error}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Execution Time + Score Weight summary */}
+                  <div className="flex items-center gap-6 text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+                    {result.durationMs !== undefined && (
+                      <span className="flex items-center gap-1">
+                        <Clock size={11} /> Execution time: <span className="font-mono font-semibold text-slate-700">{result.durationMs} ms</span>
+                      </span>
+                    )}
+                    <span>Score weight: <span className="font-semibold text-slate-700">{result.scoreWeight ?? 1} pt</span></span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Score Breakdown Footer */}
+      <div className="p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+        <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">Score Breakdown</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Automatic Score */}
+          <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+            <p className="text-[10px] text-slate-400 mb-1">Automatic Score</p>
+            <p className={`text-xl font-extrabold ${automaticScore !== null && automaticScore !== undefined ? 'text-indigo-600' : 'text-slate-300'}`}>
+              {normalizeScore(automaticScore)}
+            </p>
+            <p className="text-[10px] text-slate-400">/ 10</p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {passedWeight}/{totalWeight} pts · Sandbox grading
+            </p>
+          </div>
+
+          {/* Lecturer Score */}
+          <div className={`border rounded-xl p-3 text-center ${lecturerScore !== null && lecturerScore !== undefined ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}>
+            <p className="text-[10px] text-slate-400 mb-1">Lecturer Score</p>
+            <p className={`text-xl font-extrabold ${lecturerScore !== null && lecturerScore !== undefined ? 'text-amber-600' : 'text-slate-300'}`}>
+              {normalizeScore(lecturerScore)}
+            </p>
+            <p className="text-[10px] text-slate-400">/ 10</p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {lecturerScore !== null && lecturerScore !== undefined ? 'Manual override by lecturer' : 'No manual override'}
+            </p>
+          </div>
+
+          {/* Official Score */}
+          <div className={`border rounded-xl p-3 text-center ${isScoreWithheld ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+            <p className="text-[10px] text-slate-400 mb-1">Official Score</p>
+            {isScoreWithheld ? (
+              <>
+                <p className="text-lg font-extrabold text-rose-600">Withheld</p>
+                <p className="text-[10px] text-rose-500 mt-1">Under plagiarism review</p>
+              </>
+            ) : (
+              <>
+                <p className={`text-xl font-extrabold ${totalScore !== null && totalScore !== undefined ? 'text-emerald-700' : 'text-slate-300'}`}>
+                  {normalizeScore(totalScore)}
+                </p>
+                <p className="text-[10px] text-slate-400">/ 10</p>
+                <p className="text-[10px] text-emerald-600 mt-1 font-medium">Latest official score</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 export default function GradingResultsPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -127,6 +461,13 @@ export default function GradingResultsPage() {
     socket.emit('join_submission', id);
 
     socket.on('grading_progress', (data: any) => {
+      if (data && data.submissionId === id) {
+        loadSubmission(false);
+      }
+    });
+
+    // Member 1 - Task 5: Tự động cập nhật điểm khi Giảng viên Manual Regrade qua WebSocket
+    socket.on('score_updated', (data: any) => {
       if (data && data.submissionId === id) {
         loadSubmission(false);
       }
@@ -570,6 +911,20 @@ export default function GradingResultsPage() {
           </div>
         </div>
 
+
+        {/* ===================================================================== */}
+        {/* US-04: Detailed Test Results - Sinh viên xem chi tiết từng test case  */}
+        {/* ===================================================================== */}
+        {testResults.length > 0 && (
+          <DetailedTestResults
+            testResults={testResults}
+            isPending={isPending}
+            automaticScore={submission?.automaticScore}
+            lecturerScore={submission?.lecturerScore}
+            totalScore={submission?.totalScore}
+            isScoreWithheld={isScoreWithheld}
+          />
+        )}
         {/* Final Score Bar: Không bao giờ hiển thị điểm nếu submission bị SCORE_WITHHELD */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-4">

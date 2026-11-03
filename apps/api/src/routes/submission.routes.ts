@@ -10,6 +10,10 @@ import {
     resolveAppeal,
     getPendingAppeals,
     updateSubmissionGradingResult,
+    getSubmissionSourceCode,
+    downloadSubmissionZip,
+    manualRegrade,
+    getGradeHistory,
 } from "../controllers/submission.controller.js";
 import { authenticateJWT, authorizeRole, requireInternalApiKey } from "../middlewares/auth.middleware.js";
 import { astService } from "../services/ast.service.js";
