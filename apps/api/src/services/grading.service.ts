@@ -5,7 +5,7 @@ import AdmZip from "adm-zip";
 import { prisma } from "../prisma.js";
 import { emitGradingProgress } from "../socket/index.js";
 import { astService } from "./ast.service.js";
-import { aiGateway } from "./genai/instance.js";
+import { aiGateway, buildCleanCodeReviewPrompt } from "./genai/index.js";
 
 interface TestCaseResult {
     testCaseId?: string;
@@ -244,9 +244,42 @@ export class GradingService {
                 message: "Generating AI feedback on source code quality...",
             });
 
-            let aiFeedbackText = this.generateCleanCodeFeedback(calculatedScore, passedCount, testCases.length);
-            if (testCases.length === 0) {
-                aiFeedbackText += "\n\nSandbox warning: no test cases are configured. Automatic score was set to 0.";
+            const sourceCode = this.collectSourceCode(tempDir);
+            let aiFeedbackText: string;
+
+            if (!sourceCode.trim()) {
+                aiFeedbackText = JSON.stringify({
+                    status: "UNAVAILABLE",
+                    message: "No supported source-code files were found in the uploaded ZIP archive.",
+                });
+            } else {
+                try {
+                    const language = submission.assignment?.language || "Java";
+                    const reviewPrompt = buildCleanCodeReviewPrompt(sourceCode, language);
+                    const aiReview = await aiGateway.chat({
+                        systemPrompt: reviewPrompt.systemPrompt,
+                        userPrompt: reviewPrompt.userPrompt,
+                        temperature: reviewPrompt.temperature ?? 0.15,
+                        maxTokens: reviewPrompt.maxTokens,
+                        jsonMode: reviewPrompt.jsonMode,
+                    });
+
+                    if (aiReview.status === "COMPLETED" && aiReview.data?.content?.trim()) {
+                        aiFeedbackText = this.normalizeAiReview(aiReview.data.content);
+                    } else {
+                        console.warn(`[GradingService] AI review unavailable for ${submissionId}: ${aiReview.error || "No AI response"}`);
+                        aiFeedbackText = JSON.stringify({
+                            status: "UNAVAILABLE",
+                            message: "AI code review is temporarily unavailable. Your automatic test results are not affected.",
+                        });
+                    }
+                } catch (aiError) {
+                    console.error(`[GradingService] AI review failed for ${submissionId}:`, aiError);
+                    aiFeedbackText = JSON.stringify({
+                        status: "UNAVAILABLE",
+                        message: "AI code review could not be completed. Your automatic test results are not affected.",
+                    });
+                }
             }
 
             // Step 6: COMPLETE (Finalize results)
@@ -436,26 +469,96 @@ export class GradingService {
     }
 
     /**
-     * Generates clean code feedback and source code quality notes
+     * Collect source files recursively so ZIPs containing a project folder can
+     * be reviewed even when source files are not located at the archive root.
      */
-    private generateCleanCodeFeedback(score: number, passedTc: number, totalTc: number): string {
-        const feedbackLines: string[] = [];
+    private collectSourceCode(rootDir: string): string {
+        const supportedExtensions = new Set([
+            ".java", ".py", ".js", ".jsx", ".ts", ".tsx", ".cs",
+            ".c", ".h", ".cpp", ".hpp", ".go", ".kt", ".kts",
+            ".swift", ".php", ".rb", ".rs",
+        ]);
+        const ignoredDirectories = new Set([
+            "node_modules", ".git", "target", "build", "dist", ".gradle",
+            ".idea", ".vscode", "__pycache__",
+        ]);
+        const collected: string[] = [];
 
-        if (score >= 90) {
-            feedbackLines.push("[EXCELLENT] Source code executed flawlessly, passing all functional test cases.");
-            feedbackLines.push("- Optimal algorithmic structure with modular logic handling edge cases cleanly.");
-            feedbackLines.push("- Follows standard Java naming conventions and clean code practices.");
-        } else if (score >= 50) {
-            feedbackLines.push(`[FAIR] Submission passed ${passedTc}/${totalTc} test cases (${score}/100 points).`);
-            feedbackLines.push("- Some edge cases or standard output formatting do not fully match requirements.");
-            feedbackLines.push("- Recommendation: Review loop termination conditions and boundary value logic.");
-        } else {
-            feedbackLines.push(`[NEEDS IMPROVEMENT] Submission did not pass key test cases (${passedTc}/${totalTc} passed).`);
-            feedbackLines.push("- Please verify input stream reading (Scanner / BufferedReader) and exact output format.");
-            feedbackLines.push("- Check main class naming, algorithm logic, and edge case handling.");
+        const visit = (directory: string): void => {
+            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+                const fullPath = path.join(directory, entry.name);
+                if (entry.isDirectory()) {
+                    if (!ignoredDirectories.has(entry.name)) visit(fullPath);
+                    continue;
+                }
+
+                if (!entry.isFile() || !supportedExtensions.has(path.extname(entry.name).toLowerCase())) {
+                    continue;
+                }
+
+                try {
+                    const content = fs.readFileSync(fullPath, "utf-8");
+                    if (content.trim()) {
+                        const relativePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
+                        collected.push(`// File: ${relativePath}\n${content}`);
+                    }
+                } catch (readError) {
+                    console.warn(`[GradingService] Could not read source file ${fullPath}:`, readError);
+                }
+            }
+        };
+
+        visit(rootDir);
+        return collected.join("\n\n");
+    }
+
+    /**
+     * Normalize the AI response into a predictable shape for the result page.
+     * If a provider returns non-JSON text, preserve it as rawText instead.
+     */
+    private normalizeAiReview(content: string): string {
+        const trimmed = content.trim();
+        const withoutFence = trimmed
+            .replace(/^```(?:json)?\s*/i, "")
+            .replace(/\s*```$/, "")
+            .trim();
+
+        try {
+            const parsedStart = withoutFence.indexOf("{");
+            const parsedEnd = withoutFence.lastIndexOf("}");
+            if (parsedStart < 0 || parsedEnd <= parsedStart) {
+                return JSON.stringify({ status: "COMPLETED", rawText: trimmed });
+            }
+
+            const parsed = JSON.parse(withoutFence.slice(parsedStart, parsedEnd + 1));
+            const categories = parsed.categories && typeof parsed.categories === "object"
+                ? parsed.categories
+                : {};
+            const normalizeCategory = (value: unknown) => {
+                const numeric = Number(value);
+                return Number.isFinite(numeric) ? Math.max(0, Math.min(100, Math.round(numeric))) : null;
+            };
+            const numericScore = Number(parsed.score);
+
+            return JSON.stringify({
+                status: "COMPLETED",
+                score: Number.isFinite(numericScore)
+                    ? Math.max(0, Math.min(100, Math.round(numericScore)))
+                    : null,
+                categories: {
+                    naming: normalizeCategory(categories.naming),
+                    solid: normalizeCategory(categories.solid),
+                    errorHandling: normalizeCategory(categories.errorHandling),
+                    architecture: normalizeCategory(categories.architecture),
+                },
+                comments: Array.isArray(parsed.comments)
+                    ? parsed.comments.filter((item: unknown) => typeof item === "string")
+                    : [],
+                summary: typeof parsed.summary === "string" ? parsed.summary : "",
+            });
+        } catch {
+            return JSON.stringify({ status: "COMPLETED", rawText: trimmed });
         }
-
-        return feedbackLines.join("\n");
     }
 
     /**
