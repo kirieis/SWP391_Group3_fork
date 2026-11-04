@@ -247,42 +247,22 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
                 // Hidden: submission1Id, submission2Id, matchedFragments
             }));
 
-        const allConfiguredTestCases = submission.assignment?.testCases ?? [];
-        const hiddenTestCaseIds = new Set(
-            allConfiguredTestCases.filter((testCase: any) => testCase.isHidden).map((testCase: any) => testCase.id)
-        );
+        // Students receive assignment metadata only. Never send configured test
+        // cases or per-test execution results to the browser, including public
+        // test cases: the grading details are reserved for lecturer/admin views.
         const visibleAssignment = isStudent && submission.assignment
             ? {
-                ...submission.assignment,
-                testCases: allConfiguredTestCases.filter((testCase: any) => !testCase.isHidden),
+                title: submission.assignment.title,
+                language: submission.assignment.language,
             }
             : submission.assignment;
 
         let parsedTestResults: any[] = [];
         const rawTestResults = (submission as any).testResults;
-        if (rawTestResults) {
+        if (!isStudent && rawTestResults) {
             try {
                 const decoded = JSON.parse(rawTestResults);
-                const allResults = Array.isArray(decoded) ? decoded : [];
-                parsedTestResults = isStudent
-                    ? allResults.map((result: any, index: number) => {
-                        const hidden = Boolean(result?.isHidden)
-                            || (typeof result?.testCaseId === "string" && hiddenTestCaseIds.has(result.testCaseId))
-                            || (!result?.testCaseId && Boolean(allConfiguredTestCases[index]?.isHidden));
-                        if (!hidden) return result;
-                        // Hidden tests expose only safe outcome metadata, never test data or program output.
-                        return {
-                            testCaseId: result.testCaseId,
-                            isHidden: true,
-                            passed: Boolean(result.passed),
-                            status: result.status || (result.passed ? "PASSED" : "FAILED"),
-                            scoreWeight: result.scoreWeight,
-                            durationMs: result.durationMs,
-                            errorType: result.errorType || null,
-                            error: result.errorType ? "The hidden test case did not pass." : undefined,
-                        };
-                    })
-                    : allResults;
+                parsedTestResults = Array.isArray(decoded) ? decoded : [];
             } catch {
                 parsedTestResults = [];
             }
@@ -291,7 +271,7 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
         const responseData = {
             ...submission,
             assignment: visibleAssignment,
-            testResults: parsedTestResults,
+            testResults: isStudent ? [] : parsedTestResults,
             lecturerFeedback: lecturerAuditLogs
                 .filter((entry) => typeof entry.comment === "string" && entry.comment.trim().length > 0)
                 .map((entry) => ({

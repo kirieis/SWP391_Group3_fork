@@ -75,36 +75,6 @@ interface SubmissionData {
   [key: string]: unknown;
 }
 
-interface ParsedAiReview {
-  status?: string;
-  score?: number | null;
-  categories?: {
-    naming?: number | null;
-    solid?: number | null;
-    errorHandling?: number | null;
-    architecture?: number | null;
-  };
-  comments?: string[];
-  summary?: string;
-  message?: string;
-  rawText?: string;
-}
-
-function parseAiReview(feedback: string | null | undefined): ParsedAiReview | null {
-  if (!feedback?.trim()) return null;
-
-  try {
-    const parsed = JSON.parse(feedback);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as ParsedAiReview;
-    }
-  } catch {
-    // Older submissions stored plain-text feedback; keep it readable.
-  }
-
-  return { status: 'COMPLETED', rawText: feedback };
-}
-
 // =============================================================================
 // US-04: DetailedTestResults Component
 // Hiển thị danh sách test case chi tiết với diff view, error classification,
@@ -599,8 +569,7 @@ export default function GradingResultsPage() {
   const plagLevel = isScoreWithheld ? 'DANGER' : resolveLevel(maxSimilarity);
 
   // AI review thật (nếu có từ aiFeedback)
-  const aiReview = parseAiReview(submission?.aiFeedback);
-  const hasAiFeedback = Boolean(aiReview);
+  const hasAiFeedback = Boolean(submission?.aiFeedback && String(submission.aiFeedback).trim().length > 0);
 
   // Kiểm tra từng bước tiến trình thực tế (Stepper) dựa trên dữ liệu thật của backend
   const stepStates = [
@@ -887,7 +856,7 @@ export default function GradingResultsPage() {
             <p className="text-[11px] text-slate-400 mt-4 text-center">Docker Sandbox: 512 MB RAM limit, network disabled</p>
           </div>
 
-          {/* Card 2: AI Code Quality Review */}
+          {/* Card 2: AI Code Quality Review (Dữ liệu thật từ aiFeedback hoặc Trạng thái No data available) */}
           <div className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
             <div>
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
@@ -897,95 +866,25 @@ export default function GradingResultsPage() {
                   </div>
                   <h3 className="font-semibold text-slate-900 text-sm">AI Code Quality Review</h3>
                 </div>
-                {hasAiFeedback && aiReview?.status === 'COMPLETED' && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
-                    Reviewed
+                {!hasAiFeedback && (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">
+                    Coming soon
                   </span>
                 )}
               </div>
 
-              {hasAiFeedback && aiReview ? (
-                aiReview.status === 'UNAVAILABLE' ? (
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 leading-relaxed">
-                    {aiReview.message || 'AI code review is temporarily unavailable.'}
+              {hasAiFeedback ? (
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 bg-indigo-50/50 border border-indigo-200 rounded-xl text-indigo-900 leading-relaxed whitespace-pre-wrap">
+                    {submission?.aiFeedback}
                   </div>
-                ) : (
-                  <div className="space-y-4 text-xs">
-                    {aiReview.score !== null && aiReview.score !== undefined && (
-                      <div className="flex items-center gap-3 p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl">
-                        <div className="text-center min-w-16">
-                          <p className="text-2xl font-extrabold text-indigo-700">{aiReview.score}</p>
-                          <p className="text-[10px] text-indigo-500 font-medium">/ 100</p>
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-semibold text-slate-800">Clean Code Score</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            AI evaluation of naming, design, error handling and architecture.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {aiReview.summary && (
-                      <div>
-                        <p className="font-semibold text-slate-700 mb-1">Summary</p>
-                        <p className="text-slate-600 leading-relaxed">{aiReview.summary}</p>
-                      </div>
-                    )}
-
-                    {aiReview.categories && (
-                      <div className="grid grid-cols-2 gap-2">
-                        {([
-                          ['Naming', aiReview.categories.naming],
-                          ['SOLID principles', aiReview.categories.solid],
-                          ['Error handling', aiReview.categories.errorHandling],
-                          ['Architecture', aiReview.categories.architecture],
-                        ] as const).map(([label, score]) => (
-                          <div key={label} className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className="text-[10px] text-slate-500">{label}</span>
-                              <span className="text-[11px] font-bold text-slate-700">
-                                {score ?? '—'}{score !== null && score !== undefined ? '/100' : ''}
-                              </span>
-                            </div>
-                            <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-indigo-500 rounded-full"
-                                style={{ width: `${score ?? 0}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {aiReview.comments && aiReview.comments.length > 0 && (
-                      <div>
-                        <p className="font-semibold text-slate-700 mb-2">Review Comments</p>
-                        <ul className="space-y-2">
-                          {aiReview.comments.map((comment, index) => (
-                            <li key={index} className="flex gap-2 text-slate-600 leading-relaxed">
-                              <span className="text-indigo-500 shrink-0">•</span>
-                              <span>{comment}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {aiReview.rawText && (
-                      <div className="p-3 bg-indigo-50/50 border border-indigo-200 rounded-xl text-indigo-900 leading-relaxed whitespace-pre-wrap">
-                        {aiReview.rawText}
-                      </div>
-                    )}
-                  </div>
-                )
+                </div>
               ) : (
                 <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
                   <Clock size={24} className="mx-auto text-slate-400" />
-                  <p className="text-xs font-semibold text-slate-700">AI review is not available yet</p>
+                  <p className="text-xs font-semibold text-slate-700">No data available</p>
                   <p className="text-[11px] text-slate-400">
-                    The code review result will appear here after the grading pipeline finishes.
+                    The AI semantic code review model is being developed for upcoming assignments.
                   </p>
                 </div>
               )}
