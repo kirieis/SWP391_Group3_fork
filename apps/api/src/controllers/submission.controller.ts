@@ -132,7 +132,16 @@ export const getMySubmissions = async (req: Request, res: Response) => {
                 studentId,
             },
             orderBy: { submittedAt: "desc" },
-            include: {
+            // Do not return raw testResults JSON here: it contains hidden test data.
+            select: {
+                id: true,
+                assignmentId: true,
+                status: true,
+                totalScore: true,
+                automaticScore: true,
+                manualScore: true,
+                submittedAt: true,
+                astCheckStatus: true,
                 appeal: true,
             },
         });
@@ -161,11 +170,26 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
         if (requestingUser?.role === "STUDENT" && ownerCheck.studentId !== requestingUser.userId) {
             return res.status(403).json({ success: false, message: "You are not authorized to view this submission." });
         }
+        if (requestingUser?.role === "LECTURER") {
+            const { allowed, submission, error } = await verifyLecturerOwnership(
+                submissionId, requestingUser.userId, requestingUser.role
+            );
+            if (!allowed || !submission) {
+                return res.status(submission ? 403 : 404).json({ success: false, message: error });
+            }
+        }
 
+        const isStudent = requestingUser?.role === "STUDENT";
         const submission = await prisma.submission.findUnique({
             where: { id: submissionId },
             include: {
-                assignment: { select: { title: true, language: true, testCases: true } },
+                assignment: {
+                    select: {
+                        title: true,
+                        language: true,
+                        testCases: true,
+                    },
+                },
                 student: { include: { user: { select: { fullName: true, email: true } } } },
                 appeal: true,
                 // Fingerprint: chỉ Giảng viên/Admin mới thấy dữ liệu thô
@@ -173,13 +197,40 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
                 // Plagiarism matches: fetch rồi lọc theo role bên dưới
                 plagiarismMatches1: true,
                 plagiarismMatches2: true,
-                // ScoreAuditLog: để phân biệt automaticScore vs lecturerScore (US-04)
-                auditLogs: { orderBy: { createdAt: "asc" } },
             },
         });
 
         if (!submission) {
             return res.status(404).json({ success: false, message: "Submission result not found." });
+        }
+
+        // Load optional lecturer comments separately. If the database has not yet
+        // applied the nullable comment-column migration, keep the student result
+        // page available and omit feedback until the migration is deployed.
+        let lecturerAuditLogs: Array<{
+            id: string;
+            comment: string | null;
+            newScore: number;
+            createdAt: Date;
+            editor: { fullName: string } | null;
+        }> = [];
+        try {
+            lecturerAuditLogs = await prisma.scoreAuditLog.findMany({
+                where: { submissionId },
+                orderBy: { createdAt: "desc" },
+                select: {
+                    id: true,
+                    comment: true,
+                    newScore: true,
+                    createdAt: true,
+                    editor: { select: { fullName: true } },
+                },
+            });
+        } catch (auditLogError) {
+            console.warn(
+                "[getSubmissionResult] Lecturer feedback is unavailable; check the score_audit_logs.comment migration:",
+                auditLogError
+            );
         }
 
         /**
@@ -196,105 +247,60 @@ export const getSubmissionResult = async (req: Request, res: Response) => {
                 // Hidden: submission1Id, submission2Id, matchedFragments
             }));
 
-        const isStudent = requestingUser?.role === "STUDENT";
-        let parsedTestResults: unknown[] = [];
+        const allConfiguredTestCases = submission.assignment?.testCases ?? [];
+        const hiddenTestCaseIds = new Set(
+            allConfiguredTestCases.filter((testCase: any) => testCase.isHidden).map((testCase: any) => testCase.id)
+        );
+        const visibleAssignment = isStudent && submission.assignment
+            ? {
+                ...submission.assignment,
+                testCases: allConfiguredTestCases.filter((testCase: any) => !testCase.isHidden),
+            }
+            : submission.assignment;
+
+        let parsedTestResults: any[] = [];
         const rawTestResults = (submission as any).testResults;
         if (rawTestResults) {
             try {
                 const decoded = JSON.parse(rawTestResults);
-                parsedTestResults = Array.isArray(decoded) ? decoded : [];
+                const allResults = Array.isArray(decoded) ? decoded : [];
+                parsedTestResults = isStudent
+                    ? allResults.map((result: any, index: number) => {
+                        const hidden = Boolean(result?.isHidden)
+                            || (typeof result?.testCaseId === "string" && hiddenTestCaseIds.has(result.testCaseId))
+                            || (!result?.testCaseId && Boolean(allConfiguredTestCases[index]?.isHidden));
+                        if (!hidden) return result;
+                        // Hidden tests expose only safe outcome metadata, never test data or program output.
+                        return {
+                            testCaseId: result.testCaseId,
+                            isHidden: true,
+                            passed: Boolean(result.passed),
+                            status: result.status || (result.passed ? "PASSED" : "FAILED"),
+                            scoreWeight: result.scoreWeight,
+                            durationMs: result.durationMs,
+                            errorType: result.errorType || null,
+                            error: result.errorType ? "The hidden test case did not pass." : undefined,
+                        };
+                    })
+                    : allResults;
             } catch {
                 parsedTestResults = [];
             }
         }
 
-        /**
-         * Classify error type from grading engine output (US-04 Error Analysis)
-         * Returns one of: COMPILE_ERROR | RUNTIME_ERROR | TIMEOUT | MLE | WRONG_ANSWER | PASSED
-         */
-        const classifyErrorType = (
-            error: string | undefined,
-            passed: boolean,
-            durationMs?: number,
-        ): string => {
-            if (passed) return "PASSED";
-            if (!error) return "WRONG_ANSWER";
-            const e = error.toLowerCase();
-            // Timeout: exceeded time limit or SIGKILL
-            if (e.includes("sigkill") || e.includes("time limit") || (durationMs !== undefined && durationMs >= 5000)) {
-                return "TIMEOUT";
-            }
-            // Memory limit exceeded
-            if (e.includes("outofmemoryerror") || e.includes("memory limit") || e.includes("memoryerror")) {
-                return "MLE";
-            }
-            // Compile error: javac / python syntax / cs compile
-            if (
-                e.includes("error:") && (
-                    e.includes(".java:") || e.includes(".py:") || e.includes(".cs:") ||
-                    e.includes("syntaxerror") || e.includes("nameerror") || e.includes("indentationerror")
-                )
-            ) {
-                return "COMPILE_ERROR";
-            }
-            // Runtime exception
-            if (
-                e.includes("exception in thread") || e.includes("runtimeexception") ||
-                e.includes("nullpointerexception") || e.includes("arrayindexoutofbounds") ||
-                e.includes("stackoverflowerror") || e.includes("traceback (most recent call last)")
-            ) {
-                return "RUNTIME_ERROR";
-            }
-            // Fallback: treat any remaining "error:" as compile error
-            if (e.includes("error:")) return "COMPILE_ERROR";
-            return "WRONG_ANSWER";
-        };
-
-        // Build a lookup map: testCaseId -> { inputData, expectedOutput, scoreWeight }
-        const tcMap = new Map<string, { inputData?: string | null; expectedOutput?: string | null; scoreWeight: number }>(
-            (submission.assignment?.testCases ?? []).map((tc) => [
-                tc.id,
-                {
-                    inputData: tc.inputData,
-                    expectedOutput: tc.expectedOutput,
-                    scoreWeight: tc.scoreWeight,
-                },
-            ])
-        );
-
-        // Enrich each test result with inputData, scoreWeight and errorType (US-04)
-        const enrichedTestResults = (parsedTestResults as any[]).map((r) => {
-            const tc = r.testCaseId ? tcMap.get(r.testCaseId) : undefined;
-            return {
-                ...r,
-                inputData: tc?.inputData ?? null,
-                scoreWeight: tc?.scoreWeight ?? 1,
-                errorType: classifyErrorType(r.error, r.passed, r.durationMs),
-            };
-        });
-
-        // Derive automaticScore vs lecturerScore from ScoreAuditLog history (US-04 Score Display).
-        // automaticScore = score before any manual override (oldScore of first audit entry).
-        // lecturerScore  = the most recent override score (newScore of last audit entry).
-        // totalScore on submission is always the current official score.
-        const auditLogs = (submission as any).auditLogs ?? [];
-        const sortedAuditLogs = [...auditLogs].sort(
-            (a: any, b: any) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
-        );
-        const hasManualOverride = sortedAuditLogs.length > 0;
-        const automaticScore: number | null = hasManualOverride
-            ? (sortedAuditLogs[0]?.oldScore ?? null)
-            : (submission.totalScore ?? null);
-        const lecturerScore: number | null = hasManualOverride
-            ? (sortedAuditLogs[sortedAuditLogs.length - 1]?.newScore ?? null)
-            : null;
-
         const responseData = {
             ...submission,
-            testResults: enrichedTestResults,
-            automaticScore,
-            lecturerScore,
-            // totalScore is always the latest official score (already in submission)
+            assignment: visibleAssignment,
+            testResults: parsedTestResults,
+            lecturerFeedback: lecturerAuditLogs
+                .filter((entry) => typeof entry.comment === "string" && entry.comment.trim().length > 0)
+                .map((entry) => ({
+                    id: entry.id,
+                    comment: entry.comment as string,
+                    score: entry.newScore,
+                    createdAt: entry.createdAt,
+                    lecturerName: entry.editor?.fullName ?? "Lecturer",
+                })),
             plagiarismMatches1: isStudent
                 ? sanitizePlagiarismForStudent(submission.plagiarismMatches1)
                 : submission.plagiarismMatches1,
@@ -318,6 +324,17 @@ export const createAppeal = async (req: Request, res: Response) => {
 
         if (!studentId || !submissionId || !reason) {
             return res.status(400).json({ success: false, message: "Please provide a reason for the appeal." });
+        }
+
+        const targetSubmission = await prisma.submission.findUnique({
+            where: { id: submissionId },
+            select: { id: true, studentId: true },
+        });
+        if (!targetSubmission) {
+            return res.status(404).json({ success: false, message: "Submission not found." });
+        }
+        if (targetSubmission.studentId !== studentId) {
+            return res.status(403).json({ success: false, message: "You can only appeal your own submission." });
         }
 
         const existingAppeal = await prisma.appeal.findUnique({
@@ -368,6 +385,22 @@ export const resolveAppeal = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: "Appeal not found." });
         }
 
+        const { allowed, submission: ownedSubmission, error: ownershipError } = await verifyLecturerOwnership(
+            appeal.submissionId, lecturerId, req.user?.role || "LECTURER"
+        );
+        if (!allowed || !ownedSubmission) {
+            return res.status(ownedSubmission ? 403 : 404).json({ success: false, message: ownershipError });
+        }
+        if (status && !["RESOLVED", "REJECTED", "APPROVED"].includes(String(status))) {
+            return res.status(400).json({ success: false, message: "Invalid appeal status." });
+        }
+        if (newScore !== undefined && newScore !== null) {
+            const score = Number(newScore);
+            if (!Number.isFinite(score) || score < 0 || score > 10) {
+                return res.status(400).json({ success: false, message: "newScore must be between 0 and 10." });
+            }
+        }
+
         // Use transaction to ensure data integrity (Risk R03)
         await prisma.$transaction(async (tx) => {
             // 1. Update appeal status
@@ -383,11 +416,15 @@ export const resolveAppeal = async (req: Request, res: Response) => {
 
             // 2. If score changed -> Update submission and record SCORE_AUDIT_LOGS
             if (newScore !== undefined && newScore !== null) {
-                const oldScore = appeal.submission.totalScore;
+                const current = await tx.submission.findUnique({
+                    where: { id: appeal.submissionId },
+                    select: { totalScore: true },
+                });
+                const oldScore = current?.totalScore ?? null;
 
                 await tx.submission.update({
                     where: { id: appeal.submissionId },
-                    data: { totalScore: Number(newScore) },
+                    data: { manualScore: Number(newScore), totalScore: Number(newScore) },
                 });
 
                 // Mandatory score change audit log per Risk R03
@@ -402,6 +439,13 @@ export const resolveAppeal = async (req: Request, res: Response) => {
                 });
             }
         });
+
+        if (newScore !== undefined && newScore !== null) {
+            getSocketServer()?.to(`submission_${appeal.submissionId}`).emit("score_updated", {
+                submissionId: appeal.submissionId,
+                newScore: Number(newScore),
+            });
+        }
 
         return res.json({
             success: true,
@@ -461,7 +505,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
         }
 
         const { submissionId } = req.params;
-        const { status, totalScore, aiFeedback, step, progressPercent, message } = req.body;
+        const { status, totalScore, aiFeedback, testResults, step, progressPercent, message } = req.body;
 
         // 1. Validate status value
         // Includes AI_REVIEW_PENDING (Milestone 3) and COMPLETED (mapped from GRADED)
@@ -470,6 +514,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             "GRADED", "AI_REVIEW_PENDING",            // From queue-worker
             "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION",
             "COMPLETED",                              // Final status in DB
+            "DEADLINE_EXCEEDED",
         ];
         if (status && !ALLOWED_STATUS.includes(status)) {
             return res.status(400).json({ success: false, message: "Invalid grading status." });
@@ -486,7 +531,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
         // 3. Verify submission exists
         const currentSubmission = await prisma.submission.findUnique({
             where: { id: submissionId },
-            select: { id: true, status: true },
+            select: { id: true, status: true, manualScore: true },
         });
 
         if (!currentSubmission) {
@@ -499,14 +544,25 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             ? "COMPLETED"
             : status;
 
-        const updated = await prisma.submission.update({
-            where: { id: submissionId },
-            data: {
-                ...(dbStatus && { status: dbStatus }),
-                ...(totalScore !== undefined && totalScore !== null && { totalScore: Number(totalScore) }),
-                ...(aiFeedback && { aiFeedback }),
-            },
-        });
+        const updateData: any = {
+            ...(dbStatus && { status: dbStatus }),
+            ...(aiFeedback && { aiFeedback }),
+        };
+        if (totalScore !== undefined && totalScore !== null) {
+            updateData.automaticScore = Number(totalScore);
+        }
+        if (Array.isArray(testResults)) {
+            updateData.testResults = JSON.stringify(testResults);
+        }
+        const updated = await prisma.submission.update({ where: { id: submissionId }, data: updateData });
+        if (totalScore !== undefined && totalScore !== null && currentSubmission.manualScore == null) {
+            // Conditional write prevents a late automatic result from replacing a lecturer's override.
+            await prisma.submission.updateMany({
+                where: { id: submissionId, manualScore: null },
+                data: { totalScore: Number(totalScore) },
+            });
+        }
+        const latest = await prisma.submission.findUnique({ where: { id: submissionId } });
 
         // Emit real-time WebSocket update to students viewing the grading stepper
         if (step) {
@@ -518,7 +574,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
             });
         }
 
-        return res.json({ success: true, message: "Grading result updated successfully!", data: updated });
+        return res.json({ success: true, message: "Grading result updated successfully!", data: latest || updated });
     } catch (error) {
         console.error("[updateSubmissionGradingResult] Error:", error);
         return res.status(500).json({ success: false, message: "Server error updating submission result." });
@@ -526,7 +582,7 @@ export const updateSubmissionGradingResult = async (req: Request, res: Response)
 };
 
 // =========================================================================
-// Member 1 - Manual Review & Regrading APIs
+// Manual Review & Regrading APIs
 // =========================================================================
 
 // Helper: Determine language from file extension
@@ -588,7 +644,7 @@ async function verifyLecturerOwnership(
     return { allowed: true, submission };
 }
 
-// 6. View source code files inside a submission ZIP (Manual Review - Task 1)
+// 6. View source code files inside a submission ZIP (Manual Review)
 export const getSubmissionSourceCode = async (req: Request, res: Response) => {
     try {
         const { submissionId } = req.params;
@@ -641,12 +697,68 @@ export const getSubmissionSourceCode = async (req: Request, res: Response) => {
 
         const studentName = submission.student?.user?.fullName ?? "Unknown";
 
+        // Reuse the test cases configured on this assignment and the results already
+        // persisted by the Sandbox for this exact submission. Never create or rerun tests here.
+        let persistedResults: any[] = [];
+        if (submission.testResults) {
+            try {
+                const parsed = JSON.parse(submission.testResults);
+                persistedResults = Array.isArray(parsed) ? parsed : [];
+            } catch (parseError) {
+                console.warn(`[getSubmissionSourceCode] Invalid persisted testResults for ${submissionId}:`, parseError);
+            }
+        }
+
+        const assignmentWithTestCases = await prisma.assignment.findUnique({
+            where: { id: submission.assignmentId },
+            include: { testCases: true },
+        });
+        const configuredTestCases = assignmentWithTestCases?.testCases ?? [];
+        const resultByTestCaseId = new Map<string, any>(
+            persistedResults
+                .filter((result: any) => typeof result?.testCaseId === "string")
+                .map((result: any): [string, any] => [result.testCaseId, result])
+        );
+        const testCaseReviews = configuredTestCases.map((testCase: any, index: number) => {
+            const result = resultByTestCaseId.get(testCase.id) ?? persistedResults[index] ?? null;
+            const passed = typeof result?.passed === "boolean" ? result.passed : null;
+            const errorType = result?.errorType ?? null;
+            const submissionTerminalStatus = [
+                "COMPILATION_ERROR", "COMPILE_ERROR", "TIMEOUT", "MEMORY_LIMIT_EXCEEDED",
+                "RUNTIME_ERROR", "SECURITY_VIOLATION",
+            ].includes(String(submission.status).toUpperCase())
+                ? String(submission.status).toUpperCase()
+                : null;
+            const status = result?.status
+                ?? (errorType || submissionTerminalStatus ? (errorType || submissionTerminalStatus!)
+                    : passed === true ? "PASSED" : passed === false ? "FAILED" : "NOT_RUN");
+
+            return {
+                testCaseId: testCase.id,
+                scoreWeight: result?.scoreWeight ?? testCase.scoreWeight,
+                isHidden: Boolean(testCase.isHidden || result?.isHidden),
+                inputData: result?.inputData ?? testCase.inputData ?? "",
+                expectedOutput: result?.expectedOutput ?? testCase.expectedOutput ?? "",
+                actualOutput: result?.actualOutput ?? "",
+                passed,
+                status,
+                errorType,
+                error: result?.error ?? null,
+                durationMs: result?.durationMs ?? null,
+            };
+        });
+
         return res.json({
             success: true,
             data: {
                 submissionId,
                 studentName,
                 files,
+                submissionStatus: submission.status,
+                automaticScore: submission.automaticScore,
+                manualScore: submission.manualScore,
+                totalScore: submission.totalScore,
+                testCaseReviews,
             },
         });
     } catch (error) {
@@ -655,7 +767,7 @@ export const getSubmissionSourceCode = async (req: Request, res: Response) => {
     }
 };
 
-// 7. Download the raw submission ZIP file (Task 2)
+// 7. Download the raw submission ZIP file
 export const downloadSubmissionZip = async (req: Request, res: Response) => {
     try {
         const { submissionId } = req.params;
@@ -688,12 +800,12 @@ export const downloadSubmissionZip = async (req: Request, res: Response) => {
     }
 };
 
-// 8. Manually regrade a submission (override AI/Sandbox score) — Task 3 & Risk R03
+// 8. Manually regrade a submission (override AI score) — Risk R03
 export const manualRegrade = async (req: Request, res: Response) => {
     try {
         const { submissionId } = req.params;
         const user = req.user!;
-        const { newScore, reason } = req.body;
+        const { newScore, reason, comment } = req.body;
 
         // Validate input
         if (newScore === undefined || newScore === null) {
@@ -738,11 +850,12 @@ export const manualRegrade = async (req: Request, res: Response) => {
                     oldScore,
                     newScore: scoreNum,
                     reason: String(reason).trim(),
+                    comment: typeof comment === "string" && comment.trim() ? comment.trim() : null,
                 },
             });
         });
 
-        // Emit WebSocket event to clients watching this submission (Task 5)
+        // Emit WebSocket event to clients watching this submission
         getSocketServer()
             ?.to(`submission_${submissionId}`)
             .emit("score_updated", { submissionId, newScore: scoreNum, oldScore });
@@ -758,7 +871,7 @@ export const manualRegrade = async (req: Request, res: Response) => {
     }
 };
 
-// 9. Get score audit / grade history for a submission (Task 4)
+// 9. Get score audit / grade history for a submission
 export const getGradeHistory = async (req: Request, res: Response) => {
     try {
         const { submissionId } = req.params;

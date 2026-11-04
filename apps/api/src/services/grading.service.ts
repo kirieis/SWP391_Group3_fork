@@ -441,9 +441,19 @@ export class GradingService {
     private generateCleanCodeFeedback(score: number, passedTc: number, totalTc: number): string {
         const feedbackLines: string[] = [];
 
-        feedbackLines.push(`[NEEDS IMPROVEMENT] Submission did not pass key test cases (${passedTc}/${totalTc} passed).`);
-        feedbackLines.push("- Please verify input stream reading (Scanner / BufferedReader) and exact output format.");
-        feedbackLines.push("- Check main class naming, algorithm logic, and edge case handling.");
+        if (score >= 90) {
+            feedbackLines.push("[EXCELLENT] Source code executed flawlessly, passing all functional test cases.");
+            feedbackLines.push("- Optimal algorithmic structure with modular logic handling edge cases cleanly.");
+            feedbackLines.push("- Follows standard Java naming conventions and clean code practices.");
+        } else if (score >= 50) {
+            feedbackLines.push(`[FAIR] Submission passed ${passedTc}/${totalTc} test cases (${score}/100 points).`);
+            feedbackLines.push("- Some edge cases or standard output formatting do not fully match requirements.");
+            feedbackLines.push("- Recommendation: Review loop termination conditions and boundary value logic.");
+        } else {
+            feedbackLines.push(`[NEEDS IMPROVEMENT] Submission did not pass key test cases (${passedTc}/${totalTc} passed).`);
+            feedbackLines.push("- Please verify input stream reading (Scanner / BufferedReader) and exact output format.");
+            feedbackLines.push("- Check main class naming, algorithm logic, and edge case handling.");
+        }
 
         return feedbackLines.join("\n");
     }

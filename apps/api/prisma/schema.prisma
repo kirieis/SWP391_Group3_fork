@@ -164,9 +164,9 @@ model Submission {
   fileUrl      String            @map("file_url")
   fileHash     String?           @map("file_hash") // SHA-256
   status       String            // "PENDING", "RUNNING_TESTS", "COMPLETED", "SCORE_WITHHELD", "COMPILATION_ERROR", "TIMEOUT", "SECURITY_VIOLATION", "FAILED"
-  totalScore     Float?            @map("total_score")
-  automaticScore Float?            @map("automatic_score")
-  manualScore    Float?            @map("manual_score")
+  totalScore   Float?            @map("total_score") // Official score shown to students
+  automaticScore Float?          @map("automatic_score")
+  manualScore    Float?          @map("manual_score")
   aiFeedback   String?           @map("ai_feedback") @db.NVarChar(Max)
   testResults  String?           @map("test_results") @db.NVarChar(Max) // JSON chi tiết kết quả từng test case
   submittedAt  DateTime          @default(now()) @map("submitted_at")
@@ -270,6 +270,7 @@ model ScoreAuditLog {
   oldScore     Float?     @map("old_score")
   newScore     Float      @map("new_score")
   reason       String     @db.NVarChar(Max)
+  comment      String?    @db.NVarChar(Max)
   createdAt    DateTime   @default(now()) @map("created_at")
 
   submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)

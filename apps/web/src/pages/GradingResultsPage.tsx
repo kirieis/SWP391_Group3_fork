@@ -26,6 +26,7 @@ interface TestCaseItem {
   inputData?: string;
   expectedOutput?: string;
   scoreWeight?: number;
+  isHidden?: boolean;
   [key: string]: unknown;
 }
 
@@ -36,7 +37,7 @@ interface PlagiarismMatch {
 }
 
 // Error type từ backend classifyErrorType (US-04)
-type ErrorType = 'PASSED' | 'WRONG_ANSWER' | 'COMPILE_ERROR' | 'RUNTIME_ERROR' | 'TIMEOUT' | 'MLE';
+type ErrorType = 'PASSED' | 'WRONG_ANSWER' | 'COMPILE_ERROR' | 'RUNTIME_ERROR' | 'TIMEOUT' | 'MLE' | 'MEMORY_LIMIT_EXCEEDED';
 
 interface TestCaseResult {
   testCaseId?: string;
@@ -48,6 +49,8 @@ interface TestCaseResult {
   error?: string;
   errorType?: ErrorType;
   scoreWeight?: number;
+  isHidden?: boolean;
+  status?: string;
 }
 
 // Kiểu submission từ backend
@@ -59,7 +62,9 @@ interface SubmissionData {
   totalScore?: number | null;
   automaticScore?: number | null;
   lecturerScore?: number | null;
+  manualScore?: number | null;
   aiFeedback?: string | null;
+  lecturerFeedback?: Array<{ id: string; comment: string; score: number; createdAt: string; lecturerName: string }>;
   testResults?: TestCaseResult[];
   assignment?: {
     testCases?: TestCaseItem[];
@@ -83,7 +88,8 @@ function getErrorBadgeStyle(errorType: string | undefined, passed: boolean) {
     case 'COMPILE_ERROR': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', label: 'COMPILE ERROR' };
     case 'RUNTIME_ERROR': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', label: 'RUNTIME ERROR' };
     case 'TIMEOUT':       return { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  label: 'TIMEOUT' };
-    case 'MLE':           return { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    label: 'MEM LIMIT' };
+    case 'MLE':
+    case 'MEMORY_LIMIT_EXCEEDED': return { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', label: 'MEM LIMIT' };
     case 'WRONG_ANSWER':
     default:              return { bg: 'bg-rose-50',   text: 'text-rose-700',   border: 'border-rose-200',   label: 'WRONG ANSWER' };
   }
@@ -171,6 +177,7 @@ function DetailedTestResults({
       <div className="divide-y divide-slate-100">
         {testResults.map((result, idx) => {
           const badge = getErrorBadgeStyle(result.errorType, result.passed);
+          const isHidden = Boolean(result.isHidden);
           const isExpanded = expandedIdx === idx;
           const isDiffShown = showDiff[idx] ?? false;
           const hasExpectedAndActual =
@@ -231,6 +238,20 @@ function DetailedTestResults({
                     </div>
                   )}
 
+                  {isHidden ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                      <p className="font-semibold">Hidden test case</p>
+                      <p className="mt-1">Test data and program output are hidden for student privacy.</p>
+                    </div>
+                  ) : (
+                    <>
+                  {isHidden ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                      <p className="font-semibold">Hidden test case</p>
+                      <p className="mt-1">Test data and program output are hidden for student privacy.</p>
+                    </div>
+                  ) : (
+                    <>
                   {/* Input */}
                   {result.inputData !== null && result.inputData !== undefined && (
                     <div>
@@ -319,13 +340,19 @@ function DetailedTestResults({
                         {result.errorType === 'COMPILE_ERROR' && '⚠️ Compilation failed — the code could not be compiled. Check syntax errors and missing imports.'}
                         {result.errorType === 'RUNTIME_ERROR' && '💥 Runtime exception — the program crashed during execution. Check for null references, array bounds, or divide-by-zero.'}
                         {result.errorType === 'TIMEOUT' && '⏱️ Time Limit Exceeded — the program ran longer than the allowed time limit. Check for infinite loops or slow algorithms.'}
-                        {result.errorType === 'MLE' && '💾 Memory Limit Exceeded — the program consumed more memory than allowed. Check for memory leaks or oversized data structures.'}
+                        {(result.errorType === 'MLE' || result.errorType === 'MEMORY_LIMIT_EXCEEDED') && '💾 Memory Limit Exceeded — the program consumed more memory than allowed. Check for memory leaks or oversized data structures.'}
                         {result.errorType === 'WRONG_ANSWER' && '❌ Wrong Answer — output does not match expected. Check your logic and edge cases.'}
                       </div>
                       <pre className="bg-white border border-rose-200 rounded-xl p-3 font-mono text-[10px] text-rose-800 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                         {result.error}
                       </pre>
                     </div>
+                  )}
+
+                    </>
+                  )}
+
+                    </>
                   )}
 
                   {/* Execution Time + Score Weight summary */}
@@ -920,10 +947,56 @@ export default function GradingResultsPage() {
             testResults={testResults}
             isPending={isPending}
             automaticScore={submission?.automaticScore}
-            lecturerScore={submission?.lecturerScore}
+            lecturerScore={submission?.manualScore ?? submission?.lecturerScore}
             totalScore={submission?.totalScore}
             isScoreWithheld={isScoreWithheld}
           />
+        )}
+        {/* Lecturer feedback from the latest manual grading events */}
+        {Array.isArray(submission?.lecturerFeedback) && submission.lecturerFeedback.length > 0 && (
+          <section className="bg-white border border-amber-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare size={17} className="text-amber-600" />
+              <h3 className="font-semibold text-slate-900 text-sm">Lecturer Feedback</h3>
+            </div>
+            <div className="space-y-3">
+              {submission.lecturerFeedback.map((feedback) => (
+                <article key={feedback.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-semibold text-slate-700">{feedback.lecturerName}</span>
+                    <span className="text-[11px] text-slate-400">
+                      {new Date(feedback.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{feedback.comment}</p>
+                  <p className="text-[11px] text-amber-700 font-medium mt-2">Score at this review: {Number(feedback.score).toFixed(1)}/10</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+        {/* Lecturer feedback from the latest manual grading events */}
+        {Array.isArray(submission?.lecturerFeedback) && submission.lecturerFeedback.length > 0 && (
+          <section className="bg-white border border-amber-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare size={17} className="text-amber-600" />
+              <h3 className="font-semibold text-slate-900 text-sm">Lecturer Feedback</h3>
+            </div>
+            <div className="space-y-3">
+              {submission.lecturerFeedback.map((feedback) => (
+                <article key={feedback.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-semibold text-slate-700">{feedback.lecturerName}</span>
+                    <span className="text-[11px] text-slate-400">
+                      {new Date(feedback.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{feedback.comment}</p>
+                  <p className="text-[11px] text-amber-700 font-medium mt-2">Score at this review: {Number(feedback.score).toFixed(1)}/10</p>
+                </article>
+              ))}
+            </div>
+          </section>
         )}
         {/* Final Score Bar: Không bao giờ hiển thị điểm nếu submission bị SCORE_WITHHELD */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">

@@ -90,19 +90,4 @@ router.post("/internal/:submissionId/ast-check", requireInternalApiKey, async (r
     return res.status(result.success ? 200 : 500).json(result);
 });
 
-// =========================================================================
-// Member 1 - Manual Review & Regrading Routes (Task 1 - 4)
-// =========================================================================
-// Xem danh sách file và nội dung source code trong submission ZIP (Task 1)
-router.get("/:submissionId/source-code", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), getSubmissionSourceCode);
-
-// Tải file ZIP nộp bài gốc (Task 2)
-router.get("/:submissionId/download", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), downloadSubmissionZip);
-
-// Giảng viên chấm điểm thủ công (Task 3)
-router.post("/:submissionId/manual-regrade", authenticateJWT, authorizeRole("LECTURER", "ADMIN"), manualRegrade);
-
-// Xem lịch sử các lần sửa điểm (Task 4)
-router.get("/:submissionId/grade-history", authenticateJWT, getGradeHistory);
-
 export default router;

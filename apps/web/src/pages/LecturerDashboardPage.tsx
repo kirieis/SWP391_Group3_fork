@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Users,
   FileText,
-  Download,
-  History,
   TrendingUp,
   AlertOctagon,
   PlusCircle,
@@ -23,7 +21,9 @@ import {
   Trash2,
   GraduationCap,
   Sparkles,
+  Download,
   Code,
+  History,
   RotateCcw,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
@@ -157,14 +157,13 @@ export default function LecturerDashboardPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState<{ fullName?: string; email?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<string>('DASHBOARD');
-
+  
   // Trạng thái Lớp học
   const [classesLoading, setClassesLoading] = useState<boolean>(true);
   const [classesError, setClassesError] = useState<string>('');
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [expandedStudentList, setExpandedStudentList] = useState<boolean>(false);
-
   const [studentSearch, setStudentSearch] = useState<string>('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [studentDeleteLoading, setStudentDeleteLoading] = useState<boolean>(false);
@@ -242,7 +241,9 @@ export default function LecturerDashboardPage() {
   // Manual Review & Regrading state
   const [reviewSubmissionId, setReviewSubmissionId] = useState<string>('');
   const [reviewStudentName, setReviewStudentName] = useState<string>('');
-  const [sourceFiles, setSourceFiles] = useState<Array<{ name: string; path: string; content: string; language: string }>>([]);
+  const [sourceFiles, setSourceFiles] = useState<Array<{name: string; path: string; content: string; language: string}>>([]);
+  const [sourceTestCases, setSourceTestCases] = useState<Array<{testCaseId: string; scoreWeight?: number; isHidden: boolean; inputData: string; expectedOutput: string; actualOutput: string; passed: boolean | null; status: string; errorType?: string | null; error?: string | null; durationMs?: number | null}>>([]);
+  const [sourceSubmissionStatus, setSourceSubmissionStatus] = useState<string>('');
   const [sourceLoading, setSourceLoading] = useState<boolean>(false);
   const [sourceError, setSourceError] = useState<string>('');
   const [selectedFile, setSelectedFile] = useState<string>('');
@@ -254,10 +255,11 @@ export default function LecturerDashboardPage() {
   const [regradeAutomaticScore, setRegradeAutomaticScore] = useState<number | null>(null);
   const [regradeNewScore, setRegradeNewScore] = useState<string>('');
   const [regradeReason, setRegradeReason] = useState<string>('');
+  const [regradeComment, setRegradeComment] = useState<string>('');
   const [regrading, setRegrading] = useState<boolean>(false);
   const [regradeError, setRegradeError] = useState<string>('');
   const [showConfirmRegrade, setShowConfirmRegrade] = useState<boolean>(false);
-  const [gradeHistory, setGradeHistory] = useState<Array<{ id: string; oldScore: number | null; newScore: number; reason: string; createdAt: string; editor?: { fullName: string; email: string } }>>([]);
+  const [gradeHistory, setGradeHistory] = useState<Array<{id: string; oldScore: number | null; newScore: number; reason: string; comment?: string | null; createdAt: string; editor?: {fullName: string; email: string}}>>([]);
   const [gradeHistoryLoading, setGradeHistoryLoading] = useState<boolean>(false);
   const [showGradeHistory, setShowGradeHistory] = useState<boolean>(false);
   const [gradeHistorySubmissionId, setGradeHistorySubmissionId] = useState<string>('');
@@ -272,12 +274,16 @@ export default function LecturerDashboardPage() {
     setSourceLoading(true);
     setSourceError('');
     setSourceFiles([]);
+    setSourceTestCases([]);
+    setSourceSubmissionStatus('');
     setSelectedFile('');
     setShowSourceViewer(true);
-    const res = await apiRequest<{ submissionId: string; studentName: string; files: Array<{ name: string; path: string; content: string; language: string }> }>(`/submissions/${submissionId}/source`);
+    const res = await apiRequest<{submissionId: string; studentName: string; files: Array<{name: string; path: string; content: string; language: string}>; testCaseReviews?: Array<{testCaseId: string; scoreWeight?: number; isHidden: boolean; inputData: string; expectedOutput: string; actualOutput: string; passed: boolean | null; status: string; errorType?: string | null; error?: string | null; durationMs?: number | null}>; submissionStatus?: string}>(`/submissions/${submissionId}/source`);
     setSourceLoading(false);
     if (res.success && res.data) {
       setSourceFiles(res.data.files);
+      setSourceTestCases(Array.isArray(res.data.testCaseReviews) ? res.data.testCaseReviews : []);
+      setSourceSubmissionStatus(res.data.submissionStatus || '');
       if (res.data.files.length > 0) setSelectedFile(res.data.files[0].path);
     } else {
       setSourceError(res.message || 'Unable to load source code.');
@@ -312,6 +318,7 @@ export default function LecturerDashboardPage() {
     setRegradeAutomaticScore(automaticScore);
     setRegradeNewScore(currentScore != null ? String(currentScore) : '');
     setRegradeReason('');
+    setRegradeComment('');
     setRegradeError('');
     setShowConfirmRegrade(false);
     setShowRegradeModal(true);
@@ -329,9 +336,9 @@ export default function LecturerDashboardPage() {
     }
     setRegrading(true);
     setRegradeError('');
-    const res = await apiRequest<{ submissionId: string; oldScore: number | null; newScore: number }>(`/submissions/${regradeSubmissionId}/regrade`, {
+    const res = await apiRequest<{submissionId: string; oldScore: number | null; newScore: number}>(`/submissions/${regradeSubmissionId}/regrade`, {
       method: 'PATCH',
-      body: JSON.stringify({ newScore: scoreNum, reason: regradeReason.trim() })
+      body: JSON.stringify({ newScore: scoreNum, reason: regradeReason.trim(), comment: regradeComment.trim() || undefined })
     });
     setRegrading(false);
     if (res.success) {
@@ -348,7 +355,7 @@ export default function LecturerDashboardPage() {
     setShowGradeHistory(true);
     setGradeHistoryLoading(true);
     setGradeHistory([]);
-    const res = await apiRequest<Array<{ id: string; oldScore: number | null; newScore: number; reason: string; createdAt: string; editor?: { fullName: string; email: string } }>>(`/submissions/${submissionId}/grade-history`);
+    const res = await apiRequest<Array<{id: string; oldScore: number | null; newScore: number; reason: string; comment?: string | null; createdAt: string; editor?: {fullName: string; email: string}}>>(`/submissions/${submissionId}/grade-history`);
     setGradeHistoryLoading(false);
     if (res.success && Array.isArray(res.data)) {
       setGradeHistory(res.data);
@@ -829,13 +836,11 @@ export default function LecturerDashboardPage() {
             {[
               { id: 'DASHBOARD', label: 'Dashboard', icon: TrendingUp, action: () => setActiveTab('DASHBOARD') },
               { id: 'CREATE_CLASS', label: 'Create new class', icon: GraduationCap, action: () => setShowCreateClassModal(true) },
-              {
-                id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => {
-                  setAssignmentCreateMode('NEW');
-                  setCreateAssignmentError('');
-                  setShowCreateModal(true);
-                }
-              },
+              { id: 'CREATE_ASSIGNMENT', label: 'Create new assignment', icon: PlusCircle, action: () => {
+                setAssignmentCreateMode('NEW');
+                setCreateAssignmentError('');
+                setShowCreateModal(true);
+              } },
               { id: 'IMPORT_STUDENTS', label: 'Import students (Excel)', icon: Upload, action: () => setShowImportModal(true) },
               { id: 'MANAGE_ASSIGNMENTS', label: 'Manage assignments', icon: Trash2, action: openAssignmentManager },
               { id: 'GIT_ANALYTICS', label: 'Git Teamwork Analytics', icon: GitBranch, action: () => setActiveTab('GIT_ANALYTICS') },
@@ -862,10 +867,11 @@ export default function LecturerDashboardPage() {
                       setActiveTab(item.id);
                     }
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition ${isActive
-                    ? 'bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-600/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition ${
+                    isActive
+                      ? 'bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-600/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <Icon size={16} />
@@ -1095,441 +1101,426 @@ export default function LecturerDashboardPage() {
                 </section>
               )}
               {/* TRƯỜNG HỢP 1: Lỗi tải danh sách lớp */}
-              {classesError && (
-                <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
-                  <AlertCircle size={24} className="text-rose-600" />
-                  <p className="text-xs text-rose-700 font-medium">{classesError}</p>
-                  <button
-                    onClick={loadClasses}
-                    className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700"
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 1b: Lỗi tải danh sách assignments */}
-              {assignmentsError && (
-                <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
-                  <AlertCircle size={24} className="text-rose-600" />
-                  <p className="text-xs text-rose-700 font-medium">{assignmentsError}</p>
-                  <button
-                    onClick={() => selectedClassId && loadAssignmentsForClass(selectedClassId)}
-                    className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700"
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 2: Lecturer chưa có lớp học nào */}
-              {!classesLoading && !classesError && classes.length === 0 && (
-                <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
-                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
-                    <Users size={32} />
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900">You are not assigned to any classes yet</h3>
-                  <p className="text-xs text-slate-500 max-w-sm">
-                    Create a class to start assigning work and tracking plagiarism analysis.
-                  </p>
-                  <button
-                    onClick={() => setShowCreateClassModal(true)}
-                    className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Plus size={14} />
-                    <span>Create new class</span>
-                  </button>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 3: Có lớp học nhưng lớp chưa có assignments nào */}
-              {!classesLoading && !classesError && classes.length > 0 && !assignmentsLoading && assignments.length === 0 && (
-                <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
-                  <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
-                    <FileText size={32} />
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-900">This class has no assignments yet</h3>
-                  <p className="text-xs text-slate-500 max-w-sm">
-                    Create the first programming assignment so students can submit work for automatic grading through the AST Engine.
-                  </p>
-                  <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
-                  >
-                    <PlusCircle size={14} />
-                    <span>Create assignment for class</span>
-                  </button>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 4: Đang tải Analytics */}
-              {analyticsLoading && (
-                <div className="p-16 text-center text-slate-500 text-xs flex items-center justify-center gap-2 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                  <Loader2 size={18} className="animate-spin text-indigo-600" />
-                  <span>Calculating real-time analytics from the database and AST Engine...</span>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 5: Lỗi tải Analytics */}
-              {!analyticsLoading && analyticsError && (
-                <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
-                  <AlertCircle size={20} className="text-rose-600" />
-                  <p className="text-xs text-rose-700">{analyticsError}</p>
-                  <button
-                    onClick={() => selectedAssignmentId && loadAnalytics(selectedAssignmentId)}
-                    className="mt-1 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl"
-                  >
-                    Try again
-                  </button>
-                </div>
-              )}
-
-              {/* TRƯỜNG HỢP 6: Hiển thị số liệu Analytics thật */}
-              {!analyticsLoading && !analyticsError && analytics && (
-                <>
-                  {/* 4 Stats Cards Thật */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                      <div className="flex items-center justify-between text-slate-500 mb-2">
-                        <span className="text-xs font-medium">Total students</span>
-                        <Users size={16} className="text-blue-600" />
-                      </div>
-                      <p className="text-2xl font-bold text-slate-900">{analytics?.stats?.totalActiveStudents ?? 0}</p>
-                      <p className="text-[11px] text-emerald-600 mt-1">Synced from database</p>
-                    </div>
-
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                      <div className="flex items-center justify-between text-slate-500 mb-2">
-                        <span className="text-xs font-medium">Submissions</span>
-                        <FileText size={16} className="text-indigo-600" />
-                      </div>
-                      <p className="text-2xl font-bold text-slate-900">
-                        {analytics?.stats?.submittedCount ?? 0} / {analytics?.stats?.totalActiveStudents ?? 0}
-                      </p>
-                      <p className="text-[11px] text-indigo-600 mt-1">
-                        Rate: {analytics?.stats?.submissionRate ?? 0}%
-                      </p>
-                    </div>
-
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                      <div className="flex items-center justify-between text-slate-500 mb-2">
-                        <span className="text-xs font-medium">Average score</span>
-                        <TrendingUp size={16} className="text-emerald-600" />
-                      </div>
-                      <p className="text-2xl font-bold text-slate-900">{analytics?.stats?.averageScore ?? 0}</p>
-                      <p className="text-[11px] text-emerald-600 mt-1">Sandbox system</p>
-                    </div>
-
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                      <div className="flex items-center justify-between text-slate-500 mb-2">
-                        <span className="text-xs font-medium">Suspected plagiarism pairs</span>
-                        <AlertOctagon size={16} className="text-rose-600" />
-                      </div>
-                      <p className="text-2xl font-bold text-rose-600">
-                        {analytics?.topPlagiarismMatches?.length ?? 0} pairs
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-1">AST Winnowing Engine</p>
-                    </div>
-                  </div>
-
-                  {/* Student scores for the currently selected assignment */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900">Student scores</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Latest submission score for each active student in the selected assignment.</p>
-                      </div>
-                      <span className="text-xs text-slate-500">{analytics.studentScores?.length ?? 0} students</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                            <th className="py-3 px-3">Student ID</th>
-                            <th className="py-3 px-3">Student name</th>
-                            <th className="py-3 px-3 text-center">Submission status</th>
-                            <th className="py-3 px-3 text-center">Score</th>
-                            <th className="py-3 px-3">Submitted at</th>
-                            <th className="py-3 px-3 text-center">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {(analytics.studentScores ?? []).map((student) => <tr key={student.studentId} className="hover:bg-slate-50">
-                            <td className="py-3 px-3 font-medium text-slate-700">{student.studentCode}</td>
-                            <td className="py-3 px-3"><div className="font-semibold text-slate-900">{student.fullName}</div><div className="text-[11px] text-slate-500">{student.email}</div></td>
-                            <td className="py-3 px-3 text-center"><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${student.submissionStatus === 'NOT_SUBMITTED' ? 'bg-slate-100 text-slate-600' : student.submissionStatus === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{student.submissionStatus === 'NOT_SUBMITTED' ? 'Not submitted' : student.submissionStatus}</span></td>
-                            <td className="py-3 px-3 text-center"><div className="font-bold text-slate-900">{student.displayScore === 'N/A' ? <span className="text-slate-500">N/A</span> : student.score != null ? student.score.toFixed(2) : <span className="text-slate-400">Pending</span>}</div>{student.submissionId && <div className="mt-0.5 text-[9px] font-normal text-slate-400">Auto: {student.automaticScore == null ? '—' : student.automaticScore.toFixed(1)} · Lecturer: {student.manualScore == null ? '—' : student.manualScore.toFixed(1)}</div>}</td>
-                            <td className="py-3 px-3 text-slate-500">{student.submittedAt ? new Date(student.submittedAt).toLocaleString() : '—'}</td>
-                            <td className="py-3 px-3">
-                              {student.submissionId ? (
-                                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                                  <button type="button" onClick={() => handleViewSource(student.submissionId!, student.fullName)} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50" title="View source code">
-                                    <Code size={12} className="inline mr-1" />Source
-                                  </button>
-                                  <button type="button" onClick={() => handleDownloadZip(student.submissionId!)} disabled={downloadingZip} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50" title="Download ZIP">
-                                    <Download size={12} className="inline mr-1" />ZIP
-                                  </button>
-                                  <button type="button" onClick={() => handleOpenRegrade(student.submissionId!, student.score, student.automaticScore ?? null)} className="rounded-lg border border-indigo-200 px-2 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50" title="Manual regrade">
-                                    <RotateCcw size={12} className="inline mr-1" />Regrade
-                                  </button>
-                                  <button type="button" onClick={() => handleViewGradeHistory(student.submissionId!)} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50" title="Grade history">
-                                    <History size={12} className="inline mr-1" />History
-                                  </button>
-                                </div>
-                              ) : <span className="text-slate-300">—</span>}
-                            </td>
-                          </tr>)}
-                          {(analytics.studentScores ?? []).length === 0 && <tr><td colSpan={6} className="py-8 text-center text-slate-500">No active students in this class.</td></tr>}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Bảng Top Nghi vấn Đạo văn Thật (Plagiarism Matches) */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                          <AlertOctagon size={16} className="text-rose-600" />
-                          <span>AST Plagiarism Matches (Winnowing)</span>
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          Match data from the AST Engine (port 8000), stored in PLAGIARISM_MATCHES
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                            <th className="py-3 px-3">Suspected student pairs</th>
-                            <th className="py-3 px-3 text-center">AST similarity</th>
-                            <th className="py-3 px-3 text-center">Classification</th>
-                            <th className="py-3 px-3 text-right">Details</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {analytics?.topPlagiarismMatches && analytics.topPlagiarismMatches.length > 0 ? (
-                            analytics.topPlagiarismMatches.map((item: PlagiarismMatchItem) => {
-                              const level = resolveLevel(item.similarityPercent, item.level);
-                              return (
-                                <tr key={item.id} className="hover:bg-slate-50 transition">
-                                  <td className="py-3.5 px-3">
-                                    <div className="font-medium text-slate-900">
-                                      {item.student1?.studentCode} - {item.student1?.fullName}
-                                    </div>
-                                    <div className="text-slate-500 text-[11px]">
-                                      ↔ {item.student2?.studentCode} - {item.student2?.fullName}
-                                    </div>
-                                  </td>
-                                  <td className="py-3.5 px-3 text-center">
-                                    <span className={`font-bold px-2 py-1 rounded-md ${LEVEL_STYLE[level].badge}`}>
-                                      {item.similarityPercent.toFixed(1)}%
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 px-3 text-center">
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${LEVEL_STYLE[level].solid}`}>
-                                      {LEVEL_STYLE[level].label}
-                                      {level === 'DANGER' ? ' (Score withheld)' : ''}
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 px-3 text-right">
-                                    <button
-                                      onClick={() => navigate(`/lecturer/plagiarism/${item.id}`)}
-                                      className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium text-xs hover:underline"
-                                    >
-                                      <span>View comparison</span>
-                                      <ChevronRight size={14} />
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={4} className="py-8 text-center text-slate-400">
-                                No matching pairs were found for this assignment.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </>
-              )}
-            </>
+          {classesError && (
+            <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
+              <AlertCircle size={24} className="text-rose-600" />
+              <p className="text-xs text-rose-700 font-medium">{classesError}</p>
+              <button
+                onClick={loadClasses}
+                className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700"
+              >
+                Try again
+              </button>
+            </div>
           )}
 
-          {/* TAB 2: HỘP THƯ PHÚC KHẢO (APPEALS) */}
-          {activeTab === 'APPEALS' && (
-            <div className="space-y-6">
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
+          {/* TRƯỜNG HỢP 1b: Lỗi tải danh sách assignments */}
+          {assignmentsError && (
+            <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
+              <AlertCircle size={24} className="text-rose-600" />
+              <p className="text-xs text-rose-700 font-medium">{assignmentsError}</p>
+              <button
+                onClick={() => selectedClassId && loadAssignmentsForClass(selectedClassId)}
+                className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* TRƯỜNG HỢP 2: Lecturer chưa có lớp học nào */}
+          {!classesLoading && !classesError && classes.length === 0 && (
+            <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <Users size={32} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900">You are not assigned to any classes yet</h3>
+              <p className="text-xs text-slate-500 max-w-sm">
+                Create a class to start assigning work and tracking plagiarism analysis.
+              </p>
+              <button
+                onClick={() => setShowCreateClassModal(true)}
+                className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
+              >
+                <Plus size={14} />
+                <span>Create new class</span>
+              </button>
+            </div>
+          )}
+
+          {/* TRƯỜNG HỢP 3: Có lớp học nhưng lớp chưa có assignments nào */}
+          {!classesLoading && !classesError && classes.length > 0 && !assignmentsLoading && assignments.length === 0 && (
+            <div className="p-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-3">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <FileText size={32} />
+              </div>
+              <h3 className="text-sm font-bold text-slate-900">This class has no assignments yet</h3>
+              <p className="text-xs text-slate-500 max-w-sm">
+                Create the first programming assignment so students can submit work for automatic grading through the AST Engine.
+              </p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm"
+              >
+                <PlusCircle size={14} />
+                <span>Create assignment for class</span>
+              </button>
+            </div>
+          )}
+
+          {/* TRƯỜNG HỢP 4: Đang tải Analytics */}
+          {analyticsLoading && (
+            <div className="p-16 text-center text-slate-500 text-xs flex items-center justify-center gap-2 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <Loader2 size={18} className="animate-spin text-indigo-600" />
+              <span>Calculating real-time analytics from the database and AST Engine...</span>
+            </div>
+          )}
+
+          {/* TRƯỜNG HỢP 5: Lỗi tải Analytics */}
+          {!analyticsLoading && analyticsError && (
+            <div className="p-8 text-center bg-white rounded-2xl border border-rose-200 shadow-sm flex flex-col items-center justify-center gap-2">
+              <AlertCircle size={20} className="text-rose-600" />
+              <p className="text-xs text-rose-700">{analyticsError}</p>
+              <button
+                onClick={() => selectedAssignmentId && loadAnalytics(selectedAssignmentId)}
+                className="mt-1 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* TRƯỜNG HỢP 6: Hiển thị số liệu Analytics thật */}
+          {!analyticsLoading && !analyticsError && analytics && (
+            <>
+              {/* 4 Stats Cards Thật */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between text-slate-500 mb-2">
+                    <span className="text-xs font-medium">Total students</span>
+                    <Users size={16} className="text-blue-600" />
+                  </div>
+                  <p className="text-2xl font-bold text-slate-900">{analytics?.stats?.totalActiveStudents ?? 0}</p>
+                  <p className="text-[11px] text-emerald-600 mt-1">Synced from database</p>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between text-slate-500 mb-2">
+                    <span className="text-xs font-medium">Submissions</span>
+                    <FileText size={16} className="text-indigo-600" />
+                  </div>
+                  <p className="text-2xl font-bold text-slate-900">
+                    {analytics?.stats?.submittedCount ?? 0} / {analytics?.stats?.totalActiveStudents ?? 0}
+                  </p>
+                  <p className="text-[11px] text-indigo-600 mt-1">
+                    Rate: {analytics?.stats?.submissionRate ?? 0}%
+                  </p>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between text-slate-500 mb-2">
+                    <span className="text-xs font-medium">Average score</span>
+                    <TrendingUp size={16} className="text-emerald-600" />
+                  </div>
+                  <p className="text-2xl font-bold text-slate-900">{analytics?.stats?.averageScore ?? 0}</p>
+                  <p className="text-[11px] text-emerald-600 mt-1">Sandbox system</p>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between text-slate-500 mb-2">
+                    <span className="text-xs font-medium">Suspected plagiarism pairs</span>
+                    <AlertOctagon size={16} className="text-rose-600" />
+                  </div>
+                  <p className="text-2xl font-bold text-rose-600">
+                    {analytics?.topPlagiarismMatches?.length ?? 0} pairs
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">AST Winnowing Engine</p>
+                </div>
+              </div>
+
+              {/* Student scores for the currently selected assignment */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
                   <div>
-                    <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                      <MessageSquare size={18} className="text-indigo-600" />
-                      <span>Appeals &amp; Review Inbox</span>
-                      {pendingAppealsCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold border border-rose-200">
-                          {pendingAppealsCount} pending appeals
-                        </span>
-                      )}
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Review and resolve score appeals or student explanations regarding suspected plagiarism.
+                    <h3 className="text-sm font-bold text-slate-900">Student scores</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Latest submission score for each active student in the selected assignment.</p>
+                  </div>
+                  <span className="text-xs text-slate-500">{analytics.studentScores?.length ?? 0} students</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead><tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
+                      <th className="py-3 px-3">Student ID</th><th className="py-3 px-3">Student name</th><th className="py-3 px-3 text-center">Submission status</th><th className="py-3 px-3 text-center">Score</th><th className="py-3 px-3">Submitted at</th><th className="py-3 px-3 text-center">Actions</th>
+                    </tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(analytics.studentScores ?? []).map((student) => <tr key={student.studentId} className="hover:bg-slate-50">
+                        <td className="py-3 px-3 font-medium text-slate-700">{student.studentCode}</td>
+                        <td className="py-3 px-3"><div className="font-semibold text-slate-900">{student.fullName}</div><div className="text-[11px] text-slate-500">{student.email}</div></td>
+                        <td className="py-3 px-3 text-center"><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${student.submissionStatus === 'NOT_SUBMITTED' ? 'bg-slate-100 text-slate-600' : student.submissionStatus === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{student.submissionStatus === 'NOT_SUBMITTED' ? 'Not submitted' : student.submissionStatus}</span></td>
+                        <td className="py-3 px-3 text-center"><div className="font-bold text-slate-900">{student.displayScore === 'N/A' ? <span className="text-slate-500">N/A</span> : student.score != null ? student.score.toFixed(2) : <span className="text-slate-400">Pending</span>}</div>{student.submissionId && <div className="mt-0.5 text-[9px] font-normal text-slate-400">Auto: {student.automaticScore == null ? '—' : student.automaticScore.toFixed(1)} · Lecturer: {student.manualScore == null ? '—' : student.manualScore.toFixed(1)}</div>}</td>
+                        <td className="py-3 px-3 text-slate-500">{student.submittedAt ? new Date(student.submittedAt).toLocaleString() : '—'}</td>
+                        <td className="py-3 px-3">
+                          {student.submissionId ? (
+                            <div className="flex flex-wrap items-center justify-center gap-1.5">
+                              <button type="button" onClick={() => handleViewSource(student.submissionId!, student.fullName)} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50" title="View source code"><Code size={12} className="inline mr-1" />Source</button>
+                              <button type="button" onClick={() => handleDownloadZip(student.submissionId!)} disabled={downloadingZip} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50" title="Download ZIP"><Download size={12} className="inline mr-1" />ZIP</button>
+                              <button type="button" onClick={() => handleOpenRegrade(student.submissionId!, student.score, student.automaticScore ?? null)} className="rounded-lg border border-indigo-200 px-2 py-1 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-50" title="Manual regrade"><RotateCcw size={12} className="inline mr-1" />Regrade</button>
+                              <button type="button" onClick={() => handleViewGradeHistory(student.submissionId!)} className="rounded-lg border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-slate-50" title="Grade history"><History size={12} className="inline mr-1" />History</button>
+                            </div>
+                          ) : <span className="text-slate-300">—</span>}
+                        </td>
+                      </tr>)}
+                      {(analytics.studentScores ?? []).length === 0 && <tr><td colSpan={6} className="py-8 text-center text-slate-500">No active students in this class.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Bảng Top Nghi vấn Đạo văn Thật (Plagiarism Matches) */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <AlertOctagon size={16} className="text-rose-600" />
+                      <span>AST Plagiarism Matches (Winnowing)</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Match data from the AST Engine (port 8000), stored in PLAGIARISM_MATCHES
                     </p>
                   </div>
-                  <button
-                    onClick={loadPendingAppeals}
-                    disabled={appealsLoading}
-                    className="self-start sm:self-auto text-xs px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 transition"
-                  >
-                    {appealsLoading ? <Loader2 size={13} className="animate-spin" /> : null}
-                    <span>Refresh list</span>
-                  </button>
                 </div>
 
-                {/* Trạng thái tải */}
-                {appealsLoading && (
-                  <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
-                    <Loader2 size={24} className="animate-spin text-indigo-600" />
-                    <span>Loading appeals from the system...</span>
-                  </div>
-                )}
-
-                {/* Trạng thái lỗi */}
-                {!appealsLoading && appealsError && (
-                  <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
-                    <AlertCircle size={28} className="text-rose-600" />
-                    <p className="text-xs text-rose-700 font-medium">{appealsError}</p>
-                    <button
-                      onClick={loadPendingAppeals}
-                      className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700 font-medium"
-                    >
-                      Try again
-                    </button>
-                  </div>
-                )}
-
-                {/* Trạng thái rỗng: không có đơn nào */}
-                {!appealsLoading && !appealsError && appeals.length === 0 && (
-                  <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <CheckCircle2 size={26} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-800">No appeals yet</h4>
-                      <p className="text-xs text-slate-500 mt-0.5">There are no student appeals requiring action right now.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Danh sách các đơn khiếu nại */}
-                {!appealsLoading && !appealsError && appeals.length > 0 && (
-                  <div className="divide-y divide-slate-100 mt-2">
-                    {appeals.map((appeal) => {
-                      const studentName = appeal.student?.user?.fullName || 'Student';
-                      const studentCode = appeal.student?.studentCode || 'N/A';
-                      const studentEmail = appeal.student?.user?.email || '';
-                      const assignmentTitle = appeal.submission?.assignment?.title || 'Assignment';
-                      const currentScore =
-                        appeal.submission?.totalScore != null
-                          ? Number(appeal.submission.totalScore).toFixed(1)
-                          : 'Not available';
-                      const dateStr = appeal.createdAt
-                        ? new Date(appeal.createdAt).toLocaleString('en-US')
-                        : '';
-
-                      return (
-                        <div key={appeal.id} className="py-4 hover:bg-slate-50/50 rounded-xl px-2 transition">
-                          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                            <div className="space-y-1.5 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-semibold text-xs text-slate-900">{studentName}</span>
-                                <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                                  {studentCode}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
+                        <th className="py-3 px-3">Suspected student pairs</th>
+                        <th className="py-3 px-3 text-center">AST similarity</th>
+                        <th className="py-3 px-3 text-center">Classification</th>
+                        <th className="py-3 px-3 text-right">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {analytics?.topPlagiarismMatches && analytics.topPlagiarismMatches.length > 0 ? (
+                        analytics.topPlagiarismMatches.map((item: PlagiarismMatchItem) => {
+                          const level = resolveLevel(item.similarityPercent, item.level);
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50 transition">
+                              <td className="py-3.5 px-3">
+                                <div className="font-medium text-slate-900">
+                                  {item.student1?.studentCode} - {item.student1?.fullName}
+                                </div>
+                                <div className="text-slate-500 text-[11px]">
+                                  ↔ {item.student2?.studentCode} - {item.student2?.fullName}
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-3 text-center">
+                                <span className={`font-bold px-2 py-1 rounded-md ${LEVEL_STYLE[level].badge}`}>
+                                  {item.similarityPercent.toFixed(1)}%
                                 </span>
-                                {studentEmail && (
-                                  <span className="text-[11px] text-slate-400">({studentEmail})</span>
-                                )}
-                                <span className="text-[10px] text-slate-400">• {dateStr}</span>
-                              </div>
+                              </td>
+                              <td className="py-3.5 px-3 text-center">
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${LEVEL_STYLE[level].solid}`}>
+                                  {LEVEL_STYLE[level].label}
+                                  {level === 'DANGER' ? ' (Score withheld)' : ''}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-3 text-right">
+                                <button
+                                  onClick={() => navigate(`/lecturer/plagiarism/${item.id}`)}
+                                  className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium text-xs hover:underline"
+                                >
+                                  <span>View comparison</span>
+                                  <ChevronRight size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-400">
+                            No matching pairs were found for this assignment.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
-                              <div className="flex items-center gap-3 text-xs text-slate-600">
-                                <span>Assignment: <strong className="text-slate-800">{assignmentTitle}</strong></span>
-                                <span>•</span>
-                                <span>Current score: <strong className="text-indigo-600">{currentScore}</strong></span>
-                              </div>
+      {/* TAB 2: HỘP THƯ PHÚC KHẢO (APPEALS) */}
+      {activeTab === 'APPEALS' && (
+        <div className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <MessageSquare size={18} className="text-indigo-600" />
+                  <span>Appeals &amp; Review Inbox</span>
+                  {pendingAppealsCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold border border-rose-200">
+                      {pendingAppealsCount} pending appeals
+                    </span>
+                  )}
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Review and resolve score appeals or student explanations regarding suspected plagiarism.
+                </p>
+              </div>
+              <button
+                onClick={loadPendingAppeals}
+                disabled={appealsLoading}
+                className="self-start sm:self-auto text-xs px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 transition"
+              >
+                {appealsLoading ? <Loader2 size={13} className="animate-spin" /> : null}
+                <span>Refresh list</span>
+              </button>
+            </div>
 
-                              <div className="mt-2 p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl text-xs text-amber-950">
-                                <p className="font-semibold text-[11px] text-amber-800 mb-1 flex items-center gap-1">
-                                  <MessageSquare size={12} /> Student appeal reason:
-                                </p>
-                                <p className="whitespace-pre-wrap leading-relaxed">{appeal.reason}</p>
-                              </div>
-                            </div>
+            {/* Trạng thái tải */}
+            {appealsLoading && (
+              <div className="py-16 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                <Loader2 size={24} className="animate-spin text-indigo-600" />
+                <span>Loading appeals from the system...</span>
+              </div>
+            )}
 
-                            {/* Hành động */}
-                            <div className="flex items-center gap-2 shrink-0 self-end md:self-center mt-2 md:mt-0">
-                              <button
-                                onClick={() => navigate(`/submissions/${appeal.submissionId}/results`)}
-                                className="px-3 py-1.5 text-xs rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium flex items-center gap-1 transition"
-                              >
-                                <ExternalLink size={12} />
-                                <span>View submission</span>
-                              </button>
-                              <button
-                                onClick={() => handleOpenResolveModal(appeal, 'RESOLVED')}
-                                className="px-3 py-1.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1 transition shadow-sm"
-                              >
-                                <CheckCircle2 size={13} />
-                                <span>Approve &amp; adjust score</span>
-                              </button>
-                              <button
-                                onClick={() => handleOpenResolveModal(appeal, 'REJECTED')}
-                                className="px-2.5 py-1.5 text-xs rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-600 font-semibold flex items-center gap-1 transition"
-                              >
-                                <X size={13} />
-                                <span>Reject</span>
-                              </button>
-                            </div>
+            {/* Trạng thái lỗi */}
+            {!appealsLoading && appealsError && (
+              <div className="py-12 text-center flex flex-col items-center justify-center gap-2">
+                <AlertCircle size={28} className="text-rose-600" />
+                <p className="text-xs text-rose-700 font-medium">{appealsError}</p>
+                <button
+                  onClick={loadPendingAppeals}
+                  className="mt-2 px-3 py-1.5 bg-indigo-600 text-white text-xs rounded-xl hover:bg-indigo-700 font-medium"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {/* Trạng thái rỗng: không có đơn nào */}
+            {!appealsLoading && !appealsError && appeals.length === 0 && (
+              <div className="py-16 text-center flex flex-col items-center justify-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <CheckCircle2 size={26} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-800">No appeals yet</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">There are no student appeals requiring action right now.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Danh sách các đơn khiếu nại */}
+            {!appealsLoading && !appealsError && appeals.length > 0 && (
+              <div className="divide-y divide-slate-100 mt-2">
+                {appeals.map((appeal) => {
+                  const studentName = appeal.student?.user?.fullName || 'Student';
+                  const studentCode = appeal.student?.studentCode || 'N/A';
+                  const studentEmail = appeal.student?.user?.email || '';
+                  const assignmentTitle = appeal.submission?.assignment?.title || 'Assignment';
+                  const currentScore =
+                    appeal.submission?.totalScore != null
+                      ? Number(appeal.submission.totalScore).toFixed(1)
+                      : 'Not available';
+                  const dateStr = appeal.createdAt
+                    ? new Date(appeal.createdAt).toLocaleString('en-US')
+                    : '';
+
+                  return (
+                    <div key={appeal.id} className="py-4 hover:bg-slate-50/50 rounded-xl px-2 transition">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-xs text-slate-900">{studentName}</span>
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                              {studentCode}
+                            </span>
+                            {studentEmail && (
+                              <span className="text-[11px] text-slate-400">({studentEmail})</span>
+                            )}
+                            <span className="text-[10px] text-slate-400">• {dateStr}</span>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs text-slate-600">
+                            <span>Assignment: <strong className="text-slate-800">{assignmentTitle}</strong></span>
+                            <span>•</span>
+                            <span>Current score: <strong className="text-indigo-600">{currentScore}</strong></span>
+                          </div>
+
+                          <div className="mt-2 p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl text-xs text-amber-950">
+                            <p className="font-semibold text-[11px] text-amber-800 mb-1 flex items-center gap-1">
+                              <MessageSquare size={12} /> Student appeal reason:
+                            </p>
+                            <p className="whitespace-pre-wrap leading-relaxed">{appeal.reason}</p>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {/* TAB 3: GIT TEAMWORK ANALYTICS */}
-          {activeTab === 'GIT_ANALYTICS' && (
-            <div className="space-y-6">
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                  <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
-                    <GitBranch size={20} />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-slate-900">Git Teamwork Analytics</h2>
-                    <p className="text-xs text-slate-500">Analyze source-code contributions and teamwork through Git.</p>
-                  </div>
-                </div>
-                <div className="p-12 text-center text-xs text-slate-500 space-y-2">
-                  <GitBranch size={32} className="mx-auto text-slate-400" />
-                  <p className="font-semibold text-slate-700">Git analytics are being processed</p>
-                  <p className="text-[11px] text-slate-400 max-w-md mx-auto">
-                    The system is integrating with the class Git repository webhook to measure commits, coding frequency, and each member’s contribution.
-                  </p>
-                </div>
+                        {/* Hành động */}
+                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center mt-2 md:mt-0">
+                          <button
+                            onClick={() => navigate(`/submissions/${appeal.submissionId}/results`)}
+                            className="px-3 py-1.5 text-xs rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium flex items-center gap-1 transition"
+                          >
+                            <ExternalLink size={12} />
+                            <span>View submission</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenResolveModal(appeal, 'RESOLVED')}
+                            className="px-3 py-1.5 text-xs rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1 transition shadow-sm"
+                          >
+                            <CheckCircle2 size={13} />
+                            <span>Approve &amp; adjust score</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenResolveModal(appeal, 'REJECTED')}
+                            className="px-2.5 py-1.5 text-xs rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-600 font-semibold flex items-center gap-1 transition"
+                          >
+                            <X size={13} />
+                            <span>Reject</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: GIT TEAMWORK ANALYTICS */}
+      {activeTab === 'GIT_ANALYTICS' && (
+        <div className="space-y-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                <GitBranch size={20} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Git Teamwork Analytics</h2>
+                <p className="text-xs text-slate-500">Analyze source-code contributions and teamwork through Git.</p>
               </div>
             </div>
-          )}
+            <div className="p-12 text-center text-xs text-slate-500 space-y-2">
+              <GitBranch size={32} className="mx-auto text-slate-400" />
+              <p className="font-semibold text-slate-700">Git analytics are being processed</p>
+              <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+                The system is integrating with the class Git repository webhook to measure commits, coding frequency, and each member’s contribution.
+              </p>
+            </div>
+          </div>
         </div>
-      </main>
+      )}
+    </div>
+  </main>
 
       {/* Modal Tạo Lớp Học Mới */}
       {showCreateClassModal && (
@@ -1621,10 +1612,11 @@ export default function LecturerDashboardPage() {
 
             {importMessage && (
               <div
-                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${importMessage.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-rose-50 text-rose-700 border border-rose-200'
-                  }`}
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  importMessage.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}
               >
                 {importMessage.type === 'success' ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
                 <span>{importMessage.text}</span>
@@ -1815,169 +1807,169 @@ export default function LecturerDashboardPage() {
               {/* 3. CHẾ ĐỘ 3: CREATE MANUAL (CHỈ HIỂN THỊ KHI CHỌN TAB 'Create manual') */}
               {assignmentCreateMode === 'NEW' && (
                 <>
-                  <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
-                    <div className="flex items-center gap-2 font-semibold text-indigo-900">
-                      <Sparkles size={15} />
-                      <span>AI-assisted assignment generation</span>
-                    </div>
-                    <label className="font-medium text-slate-700 block">Topic / assignment requirements:</label>
-                    <textarea
-                      rows={2}
-                      value={generationTopic}
-                      onChange={(e) => setGenerationTopic(e.target.value)}
-                      maxLength={500}
-                      placeholder="Example: Build an OOP student list manager with search by student ID..."
-                      className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 resize-y"
-                    />
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <select
-                        value={generationDifficulty}
-                        onChange={(e) => setGenerationDifficulty(e.target.value as 'easy' | 'medium' | 'hard')}
-                        className="sm:w-36 bg-white border border-slate-200 rounded-xl p-2.5 outline-none"
-                        aria-label="AI-generated assignment difficulty"
-                      >
-                        <option value="easy">Easy</option>
-                        <option value="medium">Medium</option>
-                        <option value="hard">Hard</option>
-                      </select>
-                      <button
-                        type="button"
-                        disabled={generatingAssignment || creatingAssignment}
-                        onClick={handleGenerateAssignment}
-                        className="flex-1 px-3 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        {generatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                        {generatingAssignment ? 'AI is generating the assignment...' : 'Generate with AI'}
-                      </button>
-                    </div>
-                    {generationNotice && (
-                      <div className={`p-2.5 rounded-xl border flex items-start gap-2 ${generationNotice.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
-                        {generationNotice.type === 'success' ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
-                        <span>{generationNotice.text}</span>
-                      </div>
-                    )}
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3 space-y-2.5">
+                <div className="flex items-center gap-2 font-semibold text-indigo-900">
+                  <Sparkles size={15} />
+                  <span>AI-assisted assignment generation</span>
+                </div>
+                <label className="font-medium text-slate-700 block">Topic / assignment requirements:</label>
+                <textarea
+                  rows={2}
+                  value={generationTopic}
+                  onChange={(e) => setGenerationTopic(e.target.value)}
+                  maxLength={500}
+                  placeholder="Example: Build an OOP student list manager with search by student ID..."
+                  className="w-full bg-white border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 resize-y"
+                />
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={generationDifficulty}
+                    onChange={(e) => setGenerationDifficulty(e.target.value as 'easy' | 'medium' | 'hard')}
+                    className="sm:w-36 bg-white border border-slate-200 rounded-xl p-2.5 outline-none"
+                    aria-label="AI-generated assignment difficulty"
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={generatingAssignment || creatingAssignment}
+                    onClick={handleGenerateAssignment}
+                    className="flex-1 px-3 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {generatingAssignment ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                    {generatingAssignment ? 'AI is generating the assignment...' : 'Generate with AI'}
+                  </button>
+                </div>
+                {generationNotice && (
+                  <div className={`p-2.5 rounded-xl border flex items-start gap-2 ${generationNotice.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                    {generationNotice.type === 'success' ? <CheckCircle2 size={14} className="shrink-0 mt-0.5" /> : <AlertCircle size={14} className="shrink-0 mt-0.5" />}
+                    <span>{generationNotice.text}</span>
                   </div>
+                )}
+              </div>
 
-                  <div>
-                    <label className="font-medium text-slate-700 block mb-1">Assignment title (*):</label>
-                    <input
-                      type="text"
-                      placeholder="Example: Assignment 1: Java OOP Car Rental"
-                      value={newTitle}
-                      onChange={(e) => setNewTitle(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500"
-                    />
-                  </div>
+              <div>
+                <label className="font-medium text-slate-700 block mb-1">Assignment title (*):</label>
+                <input
+                  type="text"
+                  placeholder="Example: Assignment 1: Java OOP Car Rental"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500"
+                />
+              </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-medium text-slate-700">Assignment description (*):</label>
-                      <span className="text-[11px] text-slate-400">Detailed requirements for students</span>
-                    </div>
-                    <textarea
-                      rows={4}
-                      placeholder="Describe the problem requirements, input/output formats, and constraints..."
-                      value={newDescription}
-                      onChange={(e) => setNewDescription(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 text-xs leading-relaxed resize-y font-normal"
-                    />
-                  </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-medium text-slate-700">Assignment description (*):</label>
+                  <span className="text-[11px] text-slate-400">Detailed requirements for students</span>
+                </div>
+                <textarea
+                  rows={4}
+                  placeholder="Describe the problem requirements, input/output formats, and constraints..."
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none focus:border-indigo-500 text-xs leading-relaxed resize-y font-normal"
+                />
+              </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-medium text-slate-700 block mb-1">Language (*):</label>
-                      <select
-                        value={newLanguage}
-                        onChange={(e) => setNewLanguage(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none"
-                      >
-                        <option value="Java">Java (JDK 17)</option>
-                        <option value="C#">C# (.NET 8.0)</option>
-                        <option value="Python">Python 3.11</option>
-                      </select>
-                    </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-medium text-slate-700 block mb-1">Language (*):</label>
+                  <select
+                    value={newLanguage}
+                    onChange={(e) => setNewLanguage(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none"
+                  >
+                    <option value="Java">Java (JDK 17)</option>
+                    <option value="C#">C# (.NET 8.0)</option>
+                    <option value="Python">Python 3.11</option>
+                  </select>
+                </div>
 
-                    <div>
-                      <label className="font-medium text-slate-700 block mb-1">Deadline (*):</label>
+                <div>
+                  <label className="font-medium text-slate-700 block mb-1">Deadline (*):</label>
+                  <input
+                    type="datetime-local"
+                    value={newDeadline}
+                    onChange={(e) => setNewDeadline(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Test Cases cho Sandbox Docker */}
+              <div className="pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="font-semibold text-slate-800">Sandbox test cases:</label>
+                  <button
+                    type="button"
+                    onClick={addTestCaseRow}
+                    className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
+                  >
+                    <Plus size={12} /> Add test case
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {testCases.map((tc, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
                       <input
-                        type="datetime-local"
-                        value={newDeadline}
-                        onChange={(e) => setNewDeadline(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 outline-none"
+                        type="text"
+                        placeholder="Input data"
+                        value={tc.inputData}
+                        onChange={(e) => {
+                          const updated = [...testCases];
+                          updated[idx].inputData = e.target.value;
+                          setTestCases(updated);
+                        }}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-xs outline-none"
                       />
+                      <input
+                        type="text"
+                        placeholder="Expected output"
+                        value={tc.expectedOutput}
+                        onChange={(e) => {
+                          const updated = [...testCases];
+                          updated[idx].expectedOutput = e.target.value;
+                          setTestCases(updated);
+                        }}
+                        className="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-xs outline-none"
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Score"
+                        value={tc.scoreWeight}
+                        onChange={(e) => {
+                          const updated = [...testCases];
+                          updated[idx].scoreWeight = Number(e.target.value) || 1;
+                          setTestCases(updated);
+                        }}
+                        className="w-14 bg-white border border-slate-200 rounded-lg p-1.5 text-xs outline-none text-center"
+                      />
+                      <label className="flex items-center gap-1 text-[10px] text-slate-600 whitespace-nowrap" title="Hidden test cases do not reveal input or expected output to students">
+                        <input type="checkbox" checked={tc.isHidden} onChange={(e) => {
+                          const updated = [...testCases];
+                          updated[idx].isHidden = e.target.checked;
+                          setTestCases(updated);
+                        }} /> Hidden
+                      </label>
+                      {testCases.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeTestCaseRow(idx)}
+                          className="text-slate-400 hover:text-rose-600 p-1"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
-                  </div>
-
-                  {/* Test Cases cho Sandbox Docker */}
-                  <div className="pt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="font-semibold text-slate-800">Sandbox test cases:</label>
-                      <button
-                        type="button"
-                        onClick={addTestCaseRow}
-                        className="text-[11px] text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium"
-                      >
-                        <Plus size={12} /> Add test case
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {testCases.map((tc, idx) => (
-                        <div key={idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                          <input
-                            type="text"
-                            placeholder="Input data"
-                            value={tc.inputData}
-                            onChange={(e) => {
-                              const updated = [...testCases];
-                              updated[idx].inputData = e.target.value;
-                              setTestCases(updated);
-                            }}
-                            className="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-xs outline-none"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Expected output"
-                            value={tc.expectedOutput}
-                            onChange={(e) => {
-                              const updated = [...testCases];
-                              updated[idx].expectedOutput = e.target.value;
-                              setTestCases(updated);
-                            }}
-                            className="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-xs outline-none"
-                          />
-                          <input
-                            type="number"
-                            min="1"
-                            placeholder="Score"
-                            value={tc.scoreWeight}
-                            onChange={(e) => {
-                              const updated = [...testCases];
-                              updated[idx].scoreWeight = Number(e.target.value) || 1;
-                              setTestCases(updated);
-                            }}
-                            className="w-14 bg-white border border-slate-200 rounded-lg p-1.5 text-xs outline-none text-center"
-                          />
-                          <label className="flex items-center gap-1 text-[10px] text-slate-600 whitespace-nowrap" title="Hidden test cases do not reveal input or expected output to students">
-                            <input type="checkbox" checked={tc.isHidden} onChange={(e) => {
-                              const updated = [...testCases];
-                              updated[idx].isHidden = e.target.checked;
-                              setTestCases(updated);
-                            }} /> Hidden
-                          </label>
-                          {testCases.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeTestCaseRow(idx)}
-                              className="text-slate-400 hover:text-rose-600 p-1"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  ))}
+                </div>
+              </div>
                 </>
               )}
 
@@ -2032,12 +2024,25 @@ export default function LecturerDashboardPage() {
               <div><h3 className="text-sm font-bold text-slate-900">Source code review</h3><p className="text-xs text-slate-500">{reviewStudentName} · {reviewSubmissionId}</p></div>
               <button type="button" onClick={() => setShowSourceViewer(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={18} /></button>
             </div>
-            {sourceLoading ? <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} />Loading source files...</div> : sourceError ? <div className="p-5 text-sm text-rose-700">{sourceError}</div> : sourceFiles.length === 0 ? <div className="p-5 text-sm text-slate-500">No supported text source files were found in this ZIP.</div> : (
-              <div className="flex min-h-0 flex-1">
+            {sourceLoading ? <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} />Loading source files and saved Sandbox results...</div> : sourceError ? <div className="p-5 text-sm text-rose-700">{sourceError}</div> : (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <section className="max-h-[38%] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-xs font-bold text-slate-900">Sandbox test case results</h4><p className="text-[10px] text-slate-500">Existing results saved for this submission · no tests are created or rerun when viewing</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-600">Submission: {sourceSubmissionStatus || 'Unknown'}</span></div>
+                  {sourceTestCases.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">No configured test cases or saved Sandbox results are available for this submission.</p> : <div className="space-y-2">{sourceTestCases.map((tc, index) => {
+                    const passed = tc.passed === true || tc.status === 'PASSED';
+                    const failed = tc.passed === false || ['FAILED', 'COMPILE_ERROR', 'COMPILATION_ERROR', 'RUNTIME_ERROR', 'TIMEOUT', 'MEMORY_LIMIT_EXCEEDED', 'SECURITY_VIOLATION'].includes(tc.status);
+                    const stateClass = passed ? 'bg-emerald-100 text-emerald-700' : failed ? 'bg-rose-100 text-rose-700' : 'bg-slate-200 text-slate-600';
+                    return <details key={tc.testCaseId || index} className="rounded-lg border border-slate-200 bg-white text-xs"><summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 p-3"><span className="font-semibold text-slate-800">Test Case #{index + 1} {tc.isHidden && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-800">HIDDEN</span>}</span><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${stateClass}`}>{tc.errorType || tc.status || 'NOT_RUN'}</span></summary><div className="grid gap-2 border-t border-slate-100 p-3 md:grid-cols-2"><div><p className="mb-1 text-[10px] font-semibold uppercase text-slate-400">Input</p><pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-50 p-2 font-mono text-[10px] text-slate-700">{tc.inputData || '(Empty input)'}</pre></div><div><p className="mb-1 text-[10px] font-semibold uppercase text-slate-400">Expected output</p><pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-50 p-2 font-mono text-[10px] text-slate-700">{tc.expectedOutput || '(Empty expected output)'}</pre></div><div className="md:col-span-2"><p className="mb-1 text-[10px] font-semibold uppercase text-slate-400">Actual output from Sandbox</p><pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950 p-2 font-mono text-[10px] text-slate-100">{tc.actualOutput || '(No output recorded)'}</pre></div><div className="flex flex-wrap gap-3 text-[10px] text-slate-500"><span>Weight: {tc.scoreWeight ?? '—'}</span><span>Execution: {tc.durationMs == null ? '—' : `${tc.durationMs} ms`}</span>{tc.errorType && <span className="font-semibold text-rose-700">{tc.errorType}</span>}</div>{tc.error && <p className="whitespace-pre-wrap text-[10px] text-rose-700 md:col-span-2">{tc.error}</p>}</div></details>;
+                  })}</div>}
+                </section>
+                <div className="flex min-h-0 flex-1">
+                {sourceFiles.length === 0 ? <div className="flex-1 p-5 text-sm text-slate-500">No supported text source files were found in this ZIP.</div> : <>
                 <aside className="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 p-2">
                   {sourceFiles.map((file) => <button key={file.path} type="button" onClick={() => setSelectedFile(file.path)} className={`mb-1 block w-full truncate rounded-lg px-3 py-2 text-left text-xs ${selectedFile === file.path ? 'bg-indigo-100 font-semibold text-indigo-800' : 'text-slate-700 hover:bg-white'}`}><span className="block truncate">{file.path}</span><span className="text-[10px] text-slate-400">{file.language}</span></button>)}
                 </aside>
                 <div className="min-w-0 flex-1 overflow-auto bg-slate-950 p-4"><pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-slate-100">{renderHighlightedSource(sourceFiles.find((file) => file.path === selectedFile)?.content || '', sourceFiles.find((file) => file.path === selectedFile)?.language || 'text')}</pre></div>
+                </>}
+                </div>
               </div>
             )}
           </div>
@@ -2051,6 +2056,7 @@ export default function LecturerDashboardPage() {
             <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600"><p>Automatic score: <strong className="text-slate-800">{regradeAutomaticScore == null ? 'Not available' : `${regradeAutomaticScore.toFixed(1)} / 10`}</strong></p><p className="mt-1">Current official score: <strong className="text-indigo-700">{regradeCurrentScore == null ? 'Not graded' : `${regradeCurrentScore.toFixed(1)} / 10`}</strong></p><p className="mt-1 text-[10px] text-slate-500">The automatic score is retained separately. This value becomes the official score.</p></div>
             <label className="block text-xs font-semibold text-slate-700">New score (0–10)<input type="number" min="0" max="10" step="0.1" value={regradeNewScore} onChange={(e) => setRegradeNewScore(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm" /></label>
             <label className="block text-xs font-semibold text-slate-700">Reason (required)<textarea rows={3} value={regradeReason} onChange={(e) => setRegradeReason(e.target.value)} className="mt-1 w-full resize-y rounded-xl border border-slate-200 p-2.5 text-xs" placeholder="Explain why the score is being changed..." /></label>
+            <label className="block text-xs font-semibold text-slate-700">Feedback for student (optional)<textarea rows={3} value={regradeComment} onChange={(e) => setRegradeComment(e.target.value)} className="mt-1 w-full resize-y rounded-xl border border-slate-200 p-2.5 text-xs" placeholder="Add feedback to help the student improve (optional)..." /></label>
             {regradeError && <p className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{regradeError}</p>}
             {showConfirmRegrade ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Confirm setting the official score to <strong>{regradeNewScore}/10</strong>? This action is recorded in grade history.</div> : null}
             <div className="flex justify-end gap-2"><button type="button" onClick={() => setShowRegradeModal(false)} disabled={regrading} className="rounded-xl border border-slate-200 px-3 py-2 text-xs">Cancel</button>{showConfirmRegrade ? <button type="button" onClick={handleConfirmRegrade} disabled={regrading} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">{regrading ? 'Saving...' : 'Confirm regrade'}</button> : <button type="button" onClick={() => { const n = Number(regradeNewScore); if (!Number.isFinite(n) || n < 0 || n > 10 || !regradeReason.trim()) { setRegradeError('Enter a valid score and reason before continuing.'); return; } setRegradeError(''); setShowConfirmRegrade(true); }} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white">Review change</button>}</div>
@@ -2062,7 +2068,7 @@ export default function LecturerDashboardPage() {
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowGradeHistory(false); }}>
           <div className="max-h-[80vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><div><h3 className="text-sm font-bold text-slate-900">Grade history</h3><p className="text-[10px] text-slate-500">Submission {gradeHistorySubmissionId}</p></div><button type="button" onClick={() => setShowGradeHistory(false)} className="p-1 text-slate-400"><X size={17} /></button></div>
-            <div className="max-h-[65vh] space-y-3 overflow-y-auto p-5">{gradeHistoryLoading ? <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 size={15} className="animate-spin" />Loading history...</div> : gradeHistory.length === 0 ? <p className="text-xs text-slate-500">No manual score changes have been recorded.</p> : gradeHistory.map((entry) => <div key={entry.id} className="rounded-xl border border-slate-200 p-3 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><strong>{entry.oldScore == null ? '—' : entry.oldScore.toFixed(1)} → {entry.newScore.toFixed(1)} / 10</strong><span className="text-slate-500">{new Date(entry.createdAt).toLocaleString()}</span></div><p className="mt-1 text-slate-700">{entry.reason}</p><p className="mt-1 text-[10px] text-slate-400">By {entry.editor?.fullName || entry.editor?.email || 'Unknown lecturer'}</p></div>)}</div>
+            <div className="max-h-[65vh] space-y-3 overflow-y-auto p-5">{gradeHistoryLoading ? <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 size={15} className="animate-spin" />Loading history...</div> : gradeHistory.length === 0 ? <p className="text-xs text-slate-500">No manual score changes have been recorded.</p> : gradeHistory.map((entry) => <div key={entry.id} className="rounded-xl border border-slate-200 p-3 text-xs"><div className="flex flex-wrap items-center justify-between gap-2"><strong>{entry.oldScore == null ? '—' : entry.oldScore.toFixed(1)} → {entry.newScore.toFixed(1)} / 10</strong><span className="text-slate-500">{new Date(entry.createdAt).toLocaleString()}</span></div><p className="mt-1 text-slate-700"><span className="font-semibold">Reason:</span> {entry.reason}</p>{entry.comment && <p className="mt-2 rounded-lg bg-indigo-50 p-2 text-indigo-800"><span className="font-semibold">Student feedback:</span> {entry.comment}</p>}<p className="mt-1 text-[10px] text-slate-400">By {entry.editor?.fullName || entry.editor?.email || 'Unknown lecturer'}</p></div>)}</div>
           </div>
         </div>
       )}
@@ -2156,10 +2162,11 @@ export default function LecturerDashboardPage() {
                 type="button"
                 onClick={handleSubmitResolve}
                 disabled={resolving}
-                className={`px-4 py-2 text-xs rounded-xl text-white font-semibold flex items-center gap-1.5 shadow-sm transition ${resolveStatus === 'RESOLVED'
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : 'bg-rose-600 hover:bg-rose-700'
-                  }`}
+                className={`px-4 py-2 text-xs rounded-xl text-white font-semibold flex items-center gap-1.5 shadow-sm transition ${
+                  resolveStatus === 'RESOLVED'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
               >
                 {resolving ? <Loader2 size={13} className="animate-spin" /> : null}
                 <span>{resolveStatus === 'RESOLVED' ? 'Confirm update' : 'Confirm rejection'}</span>
@@ -2168,9 +2175,6 @@ export default function LecturerDashboardPage() {
           </div>
         </div>
       )}
-
-      {/* ========================================================================= */}
-
     </div>
   );
 }
