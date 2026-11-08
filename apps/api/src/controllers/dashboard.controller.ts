@@ -164,9 +164,12 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
                 select: { id: true, studentId: true, totalScore: true, automaticScore: true, manualScore: true, status: true, submittedAt: true },
             }),
         ]);
+        const activeStudentIdSet = new Set(activeEnrollments.map((e) => e.studentId));
         const latestByStudent = new Map<string, typeof latestSubmissions[number]>();
         for (const submission of latestSubmissions) {
-            if (!latestByStudent.has(submission.studentId)) latestByStudent.set(submission.studentId, submission);
+            if (activeStudentIdSet.has(submission.studentId) && !latestByStudent.has(submission.studentId)) {
+                latestByStudent.set(submission.studentId, submission);
+            }
         }
         const studentScores = activeEnrollments.map((enrollment) => {
             const submission = latestByStudent.get(enrollment.studentId);
@@ -186,7 +189,43 @@ export const getLecturerAnalytics = async (req: Request, res: Response) => {
             };
         });
 
-        return res.json({ success: true, data: { ...result, studentScores } });
+        // Compute fresh stats synchronized with current active enrolled students
+        const totalActiveStudents = activeEnrollments.length;
+        const submittedStudents = studentScores.filter((s) => s.submissionId !== null);
+        const submittedCount = submittedStudents.length;
+        const submissionRate = totalActiveStudents > 0 ? Number(((submittedCount / totalActiveStudents) * 100).toFixed(1)) : 0;
+
+        let totalScoreSum = 0;
+        let gradedCount = 0;
+        const scoreDistribution = {
+            under5: 0,
+            from5to65: 0,
+            from65to8: 0,
+            from8to10: 0,
+        };
+        for (const s of submittedStudents) {
+            if (s.score !== null && s.score !== undefined) {
+                totalScoreSum += s.score;
+                gradedCount++;
+                if (s.score < 5) scoreDistribution.under5++;
+                else if (s.score < 6.5) scoreDistribution.from5to65++;
+                else if (s.score < 8) scoreDistribution.from65to8++;
+                else scoreDistribution.from8to10++;
+            }
+        }
+        const averageScore = gradedCount > 0 ? Number((totalScoreSum / gradedCount).toFixed(2)) : 0;
+
+        const synchronizedStats = {
+            ...result.stats,
+            totalActiveStudents,
+            submittedCount,
+            notSubmittedCount: Math.max(0, totalActiveStudents - submittedCount),
+            submissionRate,
+            averageScore,
+            scoreDistribution,
+        };
+
+        return res.json({ success: true, data: { ...result, stats: synchronizedStats, studentScores } });
     } catch (error) {
         console.error("Error getLecturerAnalytics:", error);
         return res.status(500).json({ success: false, message: "Server error getting statistics." });

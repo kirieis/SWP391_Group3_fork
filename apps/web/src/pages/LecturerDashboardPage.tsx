@@ -1209,10 +1209,12 @@ export default function LecturerDashboardPage() {
                         <FileText size={16} className="text-indigo-600" />
                       </div>
                       <p className="text-2xl font-bold text-slate-900">
-                        {analytics?.stats?.submittedCount ?? 0} / {analytics?.stats?.totalActiveStudents ?? 0}
+                        {(analytics?.studentScores ?? []).filter((s) => s.submissionId !== null).length} / {analytics?.studentScores?.length ?? analytics?.stats?.totalActiveStudents ?? 0}
                       </p>
                       <p className="text-[11px] text-indigo-600 mt-1">
-                        Rate: {analytics?.stats?.submissionRate ?? 0}%
+                        Rate: {analytics?.studentScores && analytics.studentScores.length > 0
+                          ? Number((((analytics.studentScores.filter((s) => s.submissionId !== null).length) / analytics.studentScores.length) * 100).toFixed(1))
+                          : (analytics?.stats?.submissionRate ?? 0)}%
                       </p>
                     </div>
 
@@ -2024,7 +2026,15 @@ export default function LecturerDashboardPage() {
             </div>
             {sourceLoading ? <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={18} />Loading source files and saved Sandbox results...</div> : sourceError ? <div className="p-5 text-sm text-rose-700">{sourceError}</div> : (
               <div className="flex min-h-0 flex-1 flex-col">
-                <section className="max-h-[38%] shrink-0 overflow-y-auto border-b border-slate-200 bg-slate-50 p-4">
+                <div className="flex min-h-0 flex-1 border-b border-slate-200">
+                  {sourceFiles.length === 0 ? <div className="flex-1 p-5 text-sm text-slate-500">No supported text source files were found in this ZIP.</div> : <>
+                    <aside className="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 p-2">
+                      {sourceFiles.map((file) => <button key={file.path} type="button" onClick={() => setSelectedFile(file.path)} className={`mb-1 block w-full truncate rounded-lg px-3 py-2 text-left text-xs ${selectedFile === file.path ? 'bg-indigo-100 font-semibold text-indigo-800' : 'text-slate-700 hover:bg-white'}`}><span className="block truncate">{file.path}</span><span className="text-[10px] text-slate-400">{file.language}</span></button>)}
+                    </aside>
+                    <div className="min-w-0 flex-1 overflow-auto bg-slate-950 p-4"><pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-slate-100">{renderHighlightedSource(sourceFiles.find((file) => file.path === selectedFile)?.content || '', sourceFiles.find((file) => file.path === selectedFile)?.language || 'text')}</pre></div>
+                  </>}
+                </div>
+                <section className="max-h-[38%] shrink-0 overflow-y-auto bg-slate-50 p-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-xs font-bold text-slate-900">Sandbox test case results</h4><p className="text-[10px] text-slate-500">Existing results saved for this submission · no tests are created or rerun when viewing</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-600">Submission: {sourceSubmissionStatus || 'Unknown'}</span></div>
                   {sourceTestCases.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">No configured test cases or saved Sandbox results are available for this submission.</p> : <div className="space-y-2">{sourceTestCases.map((tc, index) => {
                     const passed = tc.passed === true || tc.status === 'PASSED';
@@ -2033,14 +2043,6 @@ export default function LecturerDashboardPage() {
                     return <details key={tc.testCaseId || index} className="rounded-lg border border-slate-200 bg-white text-xs"><summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 p-3"><span className="font-semibold text-slate-800">Test Case #{index + 1} {tc.isHidden && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] text-amber-800">HIDDEN</span>}</span><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${stateClass}`}>{tc.errorType || tc.status || 'NOT_RUN'}</span></summary><div className="grid gap-2 border-t border-slate-100 p-3 md:grid-cols-2"><div><p className="mb-1 text-[10px] font-semibold uppercase text-slate-400">Input</p><pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-50 p-2 font-mono text-[10px] text-slate-700">{tc.inputData || '(Empty input)'}</pre></div><div><p className="mb-1 text-[10px] font-semibold uppercase text-slate-400">Expected output</p><pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-50 p-2 font-mono text-[10px] text-slate-700">{tc.expectedOutput || '(Empty expected output)'}</pre></div><div className="md:col-span-2"><p className="mb-1 text-[10px] font-semibold uppercase text-slate-400">Actual output from Sandbox</p><pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950 p-2 font-mono text-[10px] text-slate-100">{tc.actualOutput || '(No output recorded)'}</pre></div><div className="flex flex-wrap gap-3 text-[10px] text-slate-500"><span>Weight: {tc.scoreWeight ?? '—'}</span><span>Execution: {tc.durationMs == null ? '—' : `${tc.durationMs} ms`}</span>{tc.errorType && <span className="font-semibold text-rose-700">{tc.errorType}</span>}</div>{tc.error && <p className="whitespace-pre-wrap text-[10px] text-rose-700 md:col-span-2">{tc.error}</p>}</div></details>;
                   })}</div>}
                 </section>
-                <div className="flex min-h-0 flex-1">
-                  {sourceFiles.length === 0 ? <div className="flex-1 p-5 text-sm text-slate-500">No supported text source files were found in this ZIP.</div> : <>
-                    <aside className="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50 p-2">
-                      {sourceFiles.map((file) => <button key={file.path} type="button" onClick={() => setSelectedFile(file.path)} className={`mb-1 block w-full truncate rounded-lg px-3 py-2 text-left text-xs ${selectedFile === file.path ? 'bg-indigo-100 font-semibold text-indigo-800' : 'text-slate-700 hover:bg-white'}`}><span className="block truncate">{file.path}</span><span className="text-[10px] text-slate-400">{file.language}</span></button>)}
-                    </aside>
-                    <div className="min-w-0 flex-1 overflow-auto bg-slate-950 p-4"><pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-slate-100">{renderHighlightedSource(sourceFiles.find((file) => file.path === selectedFile)?.content || '', sourceFiles.find((file) => file.path === selectedFile)?.language || 'text')}</pre></div>
-                  </>}
-                </div>
               </div>
             )}
           </div>
